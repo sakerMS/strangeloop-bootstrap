@@ -1,7 +1,7 @@
 # StrangeLoop CLI Setup Launcher
 # This launcher script downloads and executes the modular setup scripts
 # 
-# Usage: .\setup-strangeloop.ps1 [parameters]
+# Usage: .\setup_strangeloop.ps1 [parameters]
 # All scripts are downloaded from GitHub and executed dynamically
 
 param(
@@ -9,7 +9,7 @@ param(
     [switch]$SkipDevelopmentTools,
     [string]$UserName,
     [string]$UserEmail,
-    [string]$BaseUrl = "https://msasg.visualstudio.com/Bing_Ads/_apis/git/repositories/AdsSnR_Containers/items?path=/strangeloop-bootstrap"
+    [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
 )
 
 # Error handling
@@ -76,15 +76,15 @@ Write-Host @"
 "@ -ForegroundColor Magenta
 
 Write-Host "`nThis launcher will download and execute the latest StrangeLoop setup scripts." -ForegroundColor Cyan
-Write-Host "Source: Azure DevOps - AdsSnR_Containers/strangeloop-bootstrap" -ForegroundColor Gray
+Write-Host "Source: GitHub - strangeloop-bootstrap repository" -ForegroundColor Gray
 Write-Host "Base URL: $BaseUrl" -ForegroundColor Gray
 Write-Host ""
 
 # Define script URLs
 $scriptUrls = @{
-    "Main" = "$BaseUrl/setup_strangeloop_main.ps1?version=GBstrangeloop-bootstrap&download=true"
-    "Linux" = "$BaseUrl/setup_strangeloop_linux.ps1?version=GBstrangeloop-bootstrap&download=true"
-    "Windows" = "$BaseUrl/setup_strangeloop_windows.ps1?version=GBstrangeloop-bootstrap&download=true"
+    "Main" = "$BaseUrl/setup_strangeloop_main.ps1"
+    "Linux" = "$BaseUrl/setup_strangeloop_linux.ps1"
+    "Windows" = "$BaseUrl/setup_strangeloop_windows.ps1"
 }
 
 try {
