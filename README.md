@@ -1,26 +1,38 @@
 # StrangeLoop Bootstrap Scripts
 
-This directory contains the complete StrangeLoop CLI standalone setup system that can be deployed and downloaded independently.
+This directory contains the complete StrangeLoop CLI standalone setup system that can be deployed and downloaded independently from GitHub.
 
-## 🎯 Standalone Architecture
+## 🎯 Repository Structure
+
+```
+strangeloop-bootstrap/
+├── setup_strangeloop.ps1                # ⭐ Main launcher (User Entry Point)
+├── scripts/                             # 📂 Core Setup Scripts
+│   ├── setup_strangeloop_main.ps1       # 🎯 Main orchestrator
+│   ├── setup_strangeloop_linux.ps1      # 🐧 Linux/WSL setup
+│   └── setup_strangeloop_windows.ps1    # 🪟 Windows setup
+├── docs/                                # 📂 Documentation
+│   ├── user_guide.md                    # 📚 User installation guide
+│   └── deployment_guide.md              # 📚 GitHub deployment guide
+└── README.md                            # 📖 This file
+```
+
+## 🎯 Component Overview
 
 ### Primary Script (User Entry Point)
 - **`setup_strangeloop.ps1`** - Standalone launcher that users download and run
-  - Downloads and executes all other scripts dynamically from Azure DevOps
+  - Downloads and executes all other scripts dynamically from GitHub
   - Handles parameter passing and error recovery
   - Provides graceful fallback to local scripts if download fails
 
 ### Core Setup Scripts (Downloaded Dynamically)
-- **`setup_strangeloop_main.ps1`** - Main orchestrator that handles the complete setup flow
-- **`setup_strangeloop_linux.ps1`** - Linux/WSL environment setup and dependency management  
-- **`setup_strangeloop_windows.ps1`** - Windows environment setup and dependency management
+- **`scripts/setup_strangeloop_main.ps1`** - Main orchestrator that handles the complete setup flow
+- **`scripts/setup_strangeloop_linux.ps1`** - Linux/WSL environment setup and dependency management  
+- **`scripts/setup_strangeloop_windows.ps1`** - Windows environment setup and dependency management
 
 ### Documentation & Tools
-- **`azure_devops_setup.md`** - Azure DevOps deployment guide and URL configuration
-- **`deployment_guide.md`** - Complete deployment instructions for different environments
-- **`standalone_setup.md`** - User documentation for the standalone setup system
-- **`implementation_summary.md`** - Technical overview of the entire system
-- **`test_deployment.ps1`** - Validation tool for testing deployment readiness
+- **`docs/user_guide.md`** - Complete user installation and usage guide
+- **`docs/deployment_guide.md`** - GitHub deployment and maintenance guide
 
 ### Legacy Files
 - **`setup_strangeloop_original.ps1`** - Backup of original monolithic script
@@ -28,31 +40,37 @@ This directory contains the complete StrangeLoop CLI standalone setup system tha
 
 ## 🚀 How It Works
 
-1. **User Downloads**: Only needs `setup-strangeloop.ps1`
-2. **Dynamic Download**: Launcher downloads latest scripts from Azure DevOps
+1. **User Downloads**: Only needs `setup_strangeloop.ps1`
+2. **Dynamic Download**: Launcher downloads latest scripts from GitHub
 3. **Execution**: Scripts run with temporary files and proper cleanup
 4. **Fallback**: Uses local scripts if remote download fails
 
 ## 📁 Deployment Structure
 
-When deployed to Azure DevOps, the structure should be:
+When deployed to GitHub, the structure should be:
 ```
-AdsSnR_Containers/strangeloop-bootstrap/
-├── setup-strangeloop.ps1                 # ⭐ User download point
-├── Setup-StrangeLoop-Main.ps1           # 🎯 Main orchestrator
-├── Setup-StrangeLoop-Linux.ps1          # 🐧 Linux/WSL setup
-├── Setup-StrangeLoop-Windows.ps1        # 🪟 Windows setup
-└── [documentation files...]             # 📚 Guides and tools
+sakerMS/strangeloop-bootstrap/
+├── setup_strangeloop.ps1                # ⭐ User download point
+├── scripts/                             # 📂 Core setup scripts
+│   ├── setup_strangeloop_main.ps1       # 🎯 Main orchestrator
+│   ├── setup_strangeloop_linux.ps1      # 🐧 Linux/WSL setup
+│   └── setup_strangeloop_windows.ps1    # 🪟 Windows setup
+├── docs/                                # 📂 Documentation
+│   ├── github_deployment_guide.md       # 📚 Deployment guide
+│   ├── github_solutions.md              # 📚 Download solutions
+│   ├── user_installation_guide.md       # 📚 User guide
+│   └── [other documentation...]         # 📚 Additional docs
+└── README.md                            # 📖 Main documentation
 ```
 
-## 🔗 Azure DevOps URLs
+## 🔗 GitHub URLs
 
-**Repository**: `https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Containers`  
-**Branch**: `strangeloop-bootstrap`
+**Repository**: `https://github.com/sakerMS/strangeloop-bootstrap`  
+**Branch**: `main`
 
 **User Download URL**:
 ```powershell
-Invoke-WebRequest -Uri "https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Containers?path=/strangeloop-bootstrap/setup_strangeloop.ps1&version=GBstrangeloop-bootstrap&download=true" -OutFile "setup_strangeloop.ps1"
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"
 ```
 
 ## 💻 Usage Examples
@@ -60,7 +78,7 @@ Invoke-WebRequest -Uri "https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Cont
 ### For End Users
 ```powershell
 # One-line installation
-Invoke-WebRequest -Uri "https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Containers?path=/strangeloop-bootstrap/setup_strangeloop.ps1&version=GBstrangeloop-bootstrap&download=true" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
 
 # With parameters
 .\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "you@domain.com"
@@ -84,8 +102,8 @@ Invoke-WebRequest -Uri "https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Cont
 ### For Script Maintainers
 1. **Edit Scripts**: Make changes to setup scripts in this folder
 2. **Test Locally**: Test with fallback mechanism using local scripts
-3. **Deploy**: Upload changed scripts to Azure DevOps
-4. **Validate**: Run `test-deployment.ps1` to verify deployment
+3. **Deploy**: Push changed scripts to GitHub
+4. **Validate**: Run `test_deployment.ps1` to verify deployment
 
 ### For Repository Updates
 1. **Update URLs**: Modify paths in `setup_strangeloop.ps1` if repository structure changes
@@ -109,12 +127,12 @@ Invoke-WebRequest -Uri "https://msasg.visualstudio.com/Bing_Ads/_git/AdsSnR_Cont
 - Windows 10/11 with PowerShell 5.1+
 - Internet connection for script downloads
 - Execution policy: RemoteSigned or Unrestricted
-- Azure DevOps access (Microsoft employees)
+- GitHub access for downloading scripts
 
 ## 🚨 Troubleshooting
 
 ### Download Issues
-- Check internet connection and Azure DevOps access
+- Check internet connection and GitHub access
 - Verify URLs in deployment documentation
 - Use local fallback mode for development
 
@@ -127,22 +145,21 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 - WSL installation may require system restart
 - Azure CLI requires AdsFPS Subscription access
 - StrangeLoop installer requires manual completion
+- For local development, ensure scripts are in `scripts/` folder
 
 ## 📋 File Descriptions
 
 | File | Purpose | User Facing |
 |------|---------|-------------|
 | `setup_strangeloop.ps1` | Main launcher | ✅ Download & Run |
-| `setup_strangeloop_main.ps1` | Orchestrator | 🔄 Auto-downloaded |
-| `setup_strangeloop_linux.ps1` | Linux setup | 🔄 Auto-downloaded |
-| `setup_strangeloop_windows.ps1` | Windows setup | 🔄 Auto-downloaded |
-| `test_deployment.ps1` | Validation tool | 🛠️ Development |
-| `azure_devops_setup.md` | Deployment guide | 📚 Documentation |
-| `deployment_guide.md` | Usage instructions | 📚 Documentation |
-| `standalone_setup.md` | User guide | 📚 Documentation |
+| `scripts/setup_strangeloop_main.ps1` | Orchestrator | 🔄 Auto-downloaded |
+| `scripts/setup_strangeloop_linux.ps1` | Linux setup | 🔄 Auto-downloaded |
+| `scripts/setup_strangeloop_windows.ps1` | Windows setup | 🔄 Auto-downloaded |
+| `docs/user_guide.md` | User guide | 📚 Documentation |
+| `docs/deployment_guide.md` | Deployment guide | 📚 Documentation |
 
 ---
 **Version**: 2.0 (Standalone Architecture)  
 **Created**: August 2025  
 **Author**: Sakr Omera/Bing Ads Teams Egypt  
-**Repository**: Azure DevOps - AdsSnR_Containers/strangeloop-bootstrap
+**Repository**: GitHub - sakerMS/strangeloop-bootstrap

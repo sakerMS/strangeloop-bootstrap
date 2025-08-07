@@ -1,4 +1,4 @@
-# StrangeLoop CLI Bootstrap
+# StrangeLoop CLI Bootstrap - User Guide
 
 Automated setup and installation scripts for StrangeLoop CLI development environment.
 
@@ -18,7 +18,6 @@ The bootstrap script will:
 
 - ✅ **Check Prerequisites**: Git, Azure CLI, Git LFS
 - ✅ **Configure Git**: Line endings and user settings
-- ✅ **Setup Azure**: Authentication and subscription activation  
 - ✅ **Install StrangeLoop**: CLI and dependencies
 - ✅ **Analyze Templates**: Show available project templates
 - ✅ **Environment Setup**: Platform-specific configuration
@@ -50,9 +49,9 @@ The bootstrap script will:
 ### **Modular Design**
 ```
 setup_strangeloop.ps1           # 🚀 Main launcher (download this)
-├── setup_strangeloop_main.ps1   # 🎯 Main orchestrator
-├── setup_strangeloop_linux.ps1  # 🐧 Linux/WSL setup
-└── setup_strangeloop_windows.ps1 # 🪟 Windows setup
+├── scripts/setup_strangeloop_main.ps1   # 🎯 Main orchestrator
+├── scripts/setup_strangeloop_linux.ps1  # 🐧 Linux/WSL setup
+└── scripts/setup_strangeloop_windows.ps1 # 🪟 Windows setup
 ```
 
 ### **Smart Features**
@@ -62,12 +61,10 @@ setup_strangeloop.ps1           # 🚀 Main launcher (download this)
 - **⚡ Platform Detection**: Automatically configures for your environment
 - **🛡️ Error Handling**: Comprehensive error recovery and troubleshooting
 
-## 🛠️ **Manual Installation**
-
-If the one-line command doesn't work:
+## 🛠️ **Alternative Installation Methods**
 
 ### **Option 1: Download and Run**
-1. Download `setup_strangeloop.ps1` from this repository
+1. Download `setup_strangeloop.ps1` from the repository
 2. Open PowerShell in the download folder
 3. Run `.\setup_strangeloop.ps1`
 
@@ -130,47 +127,6 @@ Right-click PowerShell → "Run as Administrator"
 - **📖 Documentation**: Check `/docs` folder for detailed guides
 - **💬 Discussions**: Use GitHub Discussions for questions
 - **🔄 Fallback**: Local scripts always work as backup
-
-## 📁 **Repository Contents**
-
-```
-strangeloop-bootstrap/
-├── setup_strangeloop.ps1              # Main launcher script
-├── setup_strangeloop_main.ps1         # Main orchestrator
-├── setup_strangeloop_linux.ps1        # Linux/WSL setup
-├── setup_strangeloop_windows.ps1      # Windows setup
-├── setup_strangeloop_auth.ps1         # SharePoint auth version
-├── test_deployment.ps1                # Validation script
-├── README.md                          # This file
-└── docs/                              # Documentation
-    ├── deployment_guide.md
-    ├── user_guide.md
-    └── troubleshooting.md
-```
-
-## 🚀 **Contributing**
-
-### **Reporting Issues**
-1. Check existing issues first
-2. Provide detailed error messages
-3. Include system information (Windows version, PowerShell version)
-4. Describe steps to reproduce
-
-### **Improving Scripts**
-1. Fork this repository
-2. Create feature branch
-3. Test changes thoroughly
-4. Submit pull request
-
-## 📄 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 **Acknowledgments**
-
-- **StrangeLoop Team**: For the amazing CLI tool
-- **Community Contributors**: For improvements and bug reports
-- **Microsoft**: For PowerShell and Azure CLI
 
 ---
 

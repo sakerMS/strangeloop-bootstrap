@@ -82,9 +82,9 @@ Write-Host ""
 
 # Define script URLs
 $scriptUrls = @{
-    "Main" = "$BaseUrl/setup_strangeloop_main.ps1"
-    "Linux" = "$BaseUrl/setup_strangeloop_linux.ps1"
-    "Windows" = "$BaseUrl/setup_strangeloop_windows.ps1"
+    "Main" = "$BaseUrl/scripts/setup_strangeloop_main.ps1"
+    "Linux" = "$BaseUrl/scripts/setup_strangeloop_linux.ps1"
+    "Windows" = "$BaseUrl/scripts/setup_strangeloop_windows.ps1"
 }
 
 try {
@@ -115,7 +115,7 @@ try {
     
 } catch {
     # Fallback to local scripts if download fails and local scripts exist
-    $localMainScript = ".\setup_strangeloop_main.ps1"
+    $localMainScript = ".\scripts\setup_strangeloop_main.ps1"
     if (Test-Path $localMainScript) {
         Write-Host "`n=== Download Failed - Using Local Scripts ===" -ForegroundColor Yellow
         Write-Host "✓ Found local scripts, proceeding with local execution..." -ForegroundColor Green
