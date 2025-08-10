@@ -1037,6 +1037,8 @@ try {
         if ($shouldInitialize) {
             Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
             $initCommand = "cd '$appDirResolved' && strangeloop init --loop $($selectedLoop.Name)"
+            Write-Info "initCommand: $initCommand"
+            Write-Info "Running: wsl -- bash -c \"$initCommand\""
             wsl -- bash -c $initCommand
         } else {
             Write-Info "Using existing StrangeLoop project directory"
