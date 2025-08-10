@@ -11,11 +11,7 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\Setup-StrangeLoop-Main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-MaintenanceMode] [-UserName "Nam        Write-Info "Setting up Windows environment..."
-        if ($WindowsScriptUrl) {
-            Write-Info "Downloading Windows setup script from: $WindowsScriptUrl"
-            try {
-                $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "strangeloop_windows.ps1"-UserEmail "email@domain.com"]
+# Usage: .\strangeloop_main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-MaintenanceMode] [-UserName "Name"] [-UserEmail "email@domain.com"]
 
 param(
     [switch]$SkipPrerequisites,
@@ -87,8 +83,15 @@ function Invoke-ScriptContent {
         
         Write-Verbose "Executing script with: $($paramArray -join ' ')"
         # Execute the script
-        & $tempScriptPath @paramArray
-        return $LASTEXITCODE
+        try {
+            & $tempScriptPath @paramArray
+            # If no exception was thrown, consider it successful
+            return 0
+        } catch {
+            # If an exception was thrown, it failed
+            Write-Verbose "Script execution failed: $($_.Exception.Message)"
+            return 1
+        }
     } finally {
         # Clean up temp file
         if (Test-Path $tempScriptPath) {
@@ -615,6 +618,7 @@ if (-not $SkipDevelopmentTools) {
                 if ($UserName) { $linuxParams.UserName = $UserName }
                 if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
                 if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $linuxParams.Verbose = $Verbose }
                 
                 $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
                 if ($exitCode -ne 0) {
@@ -639,6 +643,7 @@ if (-not $SkipDevelopmentTools) {
                 
                 $windowsParams = @{}
                 if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $windowsParams.Verbose = $Verbose }
                 # Windows script doesn't currently take user parameters, but prepared for future
                 
                 $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams
