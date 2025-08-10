@@ -312,6 +312,7 @@ function Save-ScriptToPath {
 }
 
 Write-Host @"
+
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Standalone Launcher         ║
 ║                   Downloading Latest Scripts                  ║
