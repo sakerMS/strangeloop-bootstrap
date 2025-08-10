@@ -1,11 +1,4 @@
-# StrangeLoop CLI Setup Scr# Enable verbose output if Verbose is specified
-if ($Verbose) {
-    $VerbosePreference = "Continue"
-    Write-Host "🔍 VERBOSE MODE ENABLED in Linux setup" -ForegroundColor Cyan
-}
-if ($WhatIf) {
-    Write-Host "🔍 WHATIF MODE ENABLED in Linux setup - Preview mode" -ForegroundColor Yellow
-} Linux/WSL Dependencies
+# StrangeLoop CLI Setup Script - Linux/WSL
 # Handles Linux/WSL-specific development environment setup
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
@@ -32,11 +25,9 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# Enable verbose output if Verbose is specified
-if ($Verbose) {
-    $VerbosePreference = "Continue"
-    Write-Host "� VERBOSE MODE ENABLED in Linux setup" -ForegroundColor Cyan
-}
+# Banners
+if ($Verbose) { $VerbosePreference = "Continue"; Write-Host "🔍 VERBOSE MODE ENABLED in Linux setup" -ForegroundColor Cyan }
+if ($WhatIf) { Write-Host "🔍 WHATIF MODE ENABLED in Linux setup - Preview mode" -ForegroundColor Yellow }
 
 # Global variables for tracking display state
 $script:LastShownDistribution = ""
@@ -417,22 +408,22 @@ if (-not (Test-Command "wsl")) {
     }
 }
 
-# Check for Ubuntu 24.04.1 LTS distribution
+# Check for Ubuntu 24.04 distribution
 $wslDistros = wsl -l -v 2>$null
-
-# Look for Ubuntu 24.04 distribution
 Write-Info "Checking for $ubuntuDistro distribution..."
 
+$foundUbuntu = $false
 if ($wslDistros) {
     $wslDistros -split "`n" | ForEach-Object {
         $line = $_.Trim()
         if ($line -and $line -notmatch "^Windows Subsystem") {
             # Clean the line of any special characters
             $cleanLine = $line -replace '[^\x20-\x7F]', ''  # Remove non-printable characters
-            
+
             # Check if this line contains our Ubuntu distribution
             if ($cleanLine -like "*$ubuntuDistro*") {
                 Write-Host "  Found: $cleanLine" -ForegroundColor Green
+                $foundUbuntu = $true
             }
         }
     }

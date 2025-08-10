@@ -21,6 +21,8 @@ param(
     [switch]$WhatIf,
     [string]$UserName,
     [string]$UserEmail,
+    [string]$LinuxScriptPath,
+    [string]$WindowsScriptPath,
     [string]$LinuxScriptUrl,
     [string]$WindowsScriptUrl
 )
@@ -88,7 +90,7 @@ function Invoke-ScriptContent {
         Write-Verbose "Executing script with splatted parameters"
         # Execute the script
         try {
-            & $tempScriptPath @paramSplat
+            $null = & $tempScriptPath @paramSplat
             # If no exception was thrown, consider it successful
             return 0
         } catch {
@@ -647,7 +649,30 @@ if (-not $SkipDevelopmentTools) {
     
     if ($needsLinux) {
         Write-Info "Setting up Linux/WSL environment..."
-        if ($LinuxScriptUrl) {
+        if ($LinuxScriptPath) {
+            Write-Info "Using local Linux setup script: $LinuxScriptPath"
+            try {
+                if (-not (Test-Path $LinuxScriptPath)) { throw "Local Linux script not found at $LinuxScriptPath" }
+                $linuxScriptContent = Get-Content -Path $LinuxScriptPath -Raw -ErrorAction Stop
+                
+                $linuxParams = @{}
+                if ($UserName) { $linuxParams.UserName = $UserName }
+                if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
+                if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $linuxParams.Verbose = $Verbose }
+                if ($WhatIf) { $linuxParams.WhatIf = $WhatIf }
+                
+                $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
+                if ($exitCode -ne 0) {
+                    Write-Error "Linux/WSL setup failed with exit code: $exitCode"
+                    exit 1
+                }
+                Write-Success "Linux/WSL environment setup completed successfully"
+            } catch {
+                Write-Error "Failed to download or execute Linux setup script: $($_.Exception.Message)"
+                exit 1
+            }
+        } elseif ($LinuxScriptUrl) {
             Write-Info "Downloading Linux setup script from: $LinuxScriptUrl"
             try {
                 $linuxScriptContent = Get-ScriptFromUrl $LinuxScriptUrl "strangeloop_linux.ps1"
@@ -675,7 +700,29 @@ if (-not $SkipDevelopmentTools) {
         }
     } else {
         Write-Info "Setting up Windows environment..."
-        if ($WindowsScriptUrl) {
+        if ($WindowsScriptPath) {
+            Write-Info "Using local Windows setup script: $WindowsScriptPath"
+            try {
+                if (-not (Test-Path $WindowsScriptPath)) { throw "Local Windows script not found at $WindowsScriptPath" }
+                $windowsScriptContent = Get-Content -Path $WindowsScriptPath -Raw -ErrorAction Stop
+                
+                $windowsParams = @{}
+                if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $windowsParams.Verbose = $Verbose }
+                if ($WhatIf) { $windowsParams.WhatIf = $WhatIf }
+                # Windows script doesn't currently take user parameters, but prepared for future
+                
+                $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams
+                if ($exitCode -ne 0) {
+                    Write-Error "Windows setup failed with exit code: $exitCode"
+                    exit 1
+                }
+                Write-Success "Windows environment setup completed successfully"
+            } catch {
+                Write-Error "Failed to download or execute Windows setup script: $($_.Exception.Message)"
+                exit 1
+            }
+        } elseif ($WindowsScriptUrl) {
             Write-Info "Downloading Windows setup script from: $WindowsScriptUrl"
             try {
                 $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "strangeloop_windows.ps1"

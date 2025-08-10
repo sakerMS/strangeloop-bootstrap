@@ -7,7 +7,6 @@
 #   -SkipDevelopmentTools : Skip development tools installation
 #   -MaintenanceMode      : Update packages only (for existing installations)
 #   -Verbose              : Enable detailed logging for troubleshooting
-#   -UseLocalScripts      : Use local scripts from ./scripts without downloading
 #   -UserName            : Git username for configuration
 #   -UserEmail           : Git email for configuration
 #   -BaseUrl             : Custom base URL for script downloads
@@ -20,7 +19,6 @@ param(
     [switch]$MaintenanceMode,
     [switch]$Verbose,
     [switch]$WhatIf,
-    [switch]$UseLocalScripts,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
@@ -37,9 +35,6 @@ if ($Verbose) {
 }
 if ($WhatIf) {
     Write-Host "🔍 WHATIF MODE ENABLED - No operations will be executed" -ForegroundColor Yellow
-}
-if ($UseLocalScripts) {
-    Write-Host "📦 Using local scripts from the repository (no downloads)" -ForegroundColor Yellow
 }
 
 # Function to download script content
@@ -80,49 +75,23 @@ function Invoke-ScriptContent {
         # Write script content to temp file
         Set-Content -Path $tempScriptPath -Value $ScriptContent -Encoding UTF8
         
-        # Build parameter hashtable for splatting (avoids binding issues)
-        $paramSplat = @{}
+        # Build parameter array
+        $paramArray = @()
         foreach ($key in $Parameters.Keys) {
-            $value = $Parameters[$key]
-
-            # Normalize SwitchParameter/boolean handling
-            if ($null -ne $value -and ($value -is [System.Management.Automation.SwitchParameter] -or $value -is [bool])) {
-                if ([bool]$value) {
-                    $paramSplat[$key] = $true
-                    Write-Verbose "Added switch parameter: -$key"
-                } else {
-                    Write-Verbose "Omitted switch parameter (false): -$key"
-                }
-                continue
+            if ($Parameters[$key] -is [switch] -and $Parameters[$key]) {
+                $paramArray += "-$key"
+                Write-Verbose "Added switch parameter: -$key"
+            } elseif ($Parameters[$key] -and $Parameters[$key] -ne $false) {
+                $paramArray += "-$key", "`"$($Parameters[$key])`""
+                Write-Verbose "Added parameter: -$key `"$($Parameters[$key])`""
             }
-
-            # Skip null/empty values
-            if ($null -eq $value -or ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) {
-                Write-Verbose "Omitted parameter (null/empty): -$key"
-                continue
-            }
-
-            # Add normal key-value parameter
-            $paramSplat[$key] = $value
-            Write-Verbose "Added parameter: -$key = '$value'"
         }
-
-    $paramPreview = $paramSplat.GetEnumerator() | ForEach-Object { "-$($_.Key)=$($_.Value)" }
-    $previewStr = ($paramPreview -join ' ')
-    Write-Verbose ("Executing script with parameters (splat): " + $previewStr)
-        # Execute the script (suppress pipeline output; rely on exit code)
-        $null = & $tempScriptPath @paramSplat
-        $executionSucceeded = $true
         
-        # Safely derive an exit code (avoid StrictMode error when $LASTEXITCODE is unset)
-        $code = 0
-        try {
-            $code = (Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Stop)
-            if ($null -eq $code -or ($code -isnot [int])) { $code = 0 }
-        } catch {
-            $code = 0
-        }
-    return $code
+        Write-Verbose "Executing script with parameters: $($paramArray -join ' ')"
+        # Execute the script
+        & $tempScriptPath @paramArray
+        $executionSucceeded = $true
+        return $LASTEXITCODE
     } catch {
         Write-Host "✗ Error while executing downloaded script." -ForegroundColor Red
         Write-Host "  Temp script path: $tempScriptPath" -ForegroundColor Yellow
@@ -194,16 +163,11 @@ if ($Verbose) {
 }
 Write-Host ""
 
-# Define script URLs (remote) and local paths
+# Define script URLs
 $scriptUrls = @{
     "Main" = "$BaseUrl/scripts/strangeloop_main.ps1"
     "Linux" = "$BaseUrl/scripts/strangeloop_linux.ps1"
     "Windows" = "$BaseUrl/scripts/strangeloop_windows.ps1"
-}
-$localScripts = @{
-    "Main" = Join-Path $PSScriptRoot "scripts/strangeloop_main.ps1"
-    "Linux" = Join-Path $PSScriptRoot "scripts/strangeloop_linux.ps1"
-    "Windows" = Join-Path $PSScriptRoot "scripts/strangeloop_windows.ps1"
 }
 
 if ($Verbose) {
@@ -211,28 +175,14 @@ if ($Verbose) {
     foreach ($script in $scriptUrls.GetEnumerator()) {
         Write-Verbose "- $($script.Key): $($script.Value)"
     }
-    if ($UseLocalScripts) {
-        Write-Verbose "Local script paths:"
-        foreach ($script in $localScripts.GetEnumerator()) {
-            Write-Verbose "- $($script.Key): $($script.Value)"
-        }
-    }
 }
 
 try {
-    # Get the main script content (local or remote)
-    if ($UseLocalScripts) {
-        Write-Host "=== Using Local Main Setup Script ===" -ForegroundColor Cyan
-        if (-not (Test-Path $localScripts.Main)) {
-            throw "Local main script not found at $($localScripts.Main)"
-        }
-        $mainScriptContent = Get-Content -Path $localScripts.Main -Raw -ErrorAction Stop
-    } else {
-        Write-Host "=== Downloading Main Setup Script ===" -ForegroundColor Cyan
-        $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "strangeloop_main.ps1"
-        # Work around known stray token corruption in remote content
-        $mainScriptContent = Sanitize-DownloadedScript -Content $mainScriptContent -ScriptName "strangeloop_main.ps1"
-    }
+    # Download the main script
+    Write-Host "=== Downloading Main Setup Script ===" -ForegroundColor Cyan
+    $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "strangeloop_main.ps1"
+    # Work around known stray token corruption in remote content
+    $mainScriptContent = Sanitize-DownloadedScript -Content $mainScriptContent -ScriptName "strangeloop_main.ps1"
     
     # Prepare parameters for main script
     $mainParams = @{
@@ -243,11 +193,9 @@ try {
         WhatIf = $WhatIf
         UserName = $UserName
         UserEmail = $UserEmail
-        # Prefer local script paths when requested; otherwise pass URLs
-        LinuxScriptPath = $UseLocalScripts ? $localScripts.Linux : $null
-        WindowsScriptPath = $UseLocalScripts ? $localScripts.Windows : $null
-        LinuxScriptUrl = -not $UseLocalScripts ? $scriptUrls.Linux : $null
-        WindowsScriptUrl = -not $UseLocalScripts ? $scriptUrls.Windows : $null
+        # Pass script URLs to main script so it can download Linux/Windows scripts
+        LinuxScriptUrl = $scriptUrls.Linux
+        WindowsScriptUrl = $scriptUrls.Windows
     }
     
     if ($Verbose) {
@@ -263,14 +211,9 @@ try {
         Write-Host "  • Prerequisites check (skipped: $SkipPrerequisites)" -ForegroundColor Gray
         Write-Host "  • Development tools setup (skipped: $SkipDevelopmentTools)" -ForegroundColor Gray
         Write-Host "  • Maintenance mode: $MaintenanceMode" -ForegroundColor Gray
-        Write-Host "  • Target scripts: strangeloop_main.ps1 (" -NoNewline -ForegroundColor Gray
-        if ($UseLocalScripts) { Write-Host "local" -NoNewline -ForegroundColor Gray } else { Write-Host "downloaded" -NoNewline -ForegroundColor Gray }
-        Write-Host ")" -ForegroundColor Gray
+        Write-Host "  • Target scripts: strangeloop_main.ps1" -ForegroundColor Gray
         if (-not $SkipDevelopmentTools) {
             Write-Host "  • Platform-specific setup (Linux/Windows)" -ForegroundColor Gray
-            if ($UseLocalScripts) {
-                Write-Host "    - Using local OS setup scripts from ./scripts" -ForegroundColor Gray
-            }
         }
         Write-Host "`nNo actual operations performed in WhatIf mode." -ForegroundColor Yellow
         return 0
