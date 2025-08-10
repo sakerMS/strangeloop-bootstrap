@@ -627,27 +627,27 @@ if ($poetryVersion) {
 
 # Step 4: Git Configuration
 Write-Step "Git Configuration"
-
 # Check existing Git configuration
 $existingName = Get-WSLCommandOutput "git config --global user.name 2>/dev/null" $ubuntuDistro
 $existingEmail = Get-WSLCommandOutput "git config --global user.email 2>/dev/null" $ubuntuDistro
 
-if ($existingName -and $existingEmail) {
-    Write-Success "Git is already configured:"
-    Write-Host "  Name: $existingName" -ForegroundColor Gray
-    Write-Host "  Email: $existingEmail" -ForegroundColor Gray
-} else {
-    Write-Info "Setting up Git user configuration..."
-    if (-not $UserName) {
-        $UserName = Get-UserInput "Enter your full name for Git commits" -Required $true
-    }
-    if (-not $UserEmail) {
-        $UserEmail = Get-UserInput "Enter your email address for Git commits" -Required $true
-    }
-    
-    Invoke-WSLCommand "git config --global user.name '$UserName'" "Setting Git user name" $ubuntuDistro
-    Invoke-WSLCommand "git config --global user.email '$UserEmail'" "Setting Git user email" $ubuntuDistro
-}
+# Always set required git config values (idempotent)
+Write-Info "Configuring Git user/email/default branch..."
+Invoke-WSLCommand "git config --global user.email '$UserEmail'" "Setting Git user email" $ubuntuDistro
+Invoke-WSLCommand "git config --global user.name '$UserName'" "Setting Git user name" $ubuntuDistro
+Invoke-WSLCommand "git config --global init.defaultBranch 'main'" "Setting default branch to main" $ubuntuDistro
+
+# Install git-lfs
+Write-Info "Ensuring git-lfs is installed..."
+Invoke-WSLCommand "sudo apt-get update && sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro $sudoPassword
+Invoke-WSLCommand "git lfs install" "Configuring Git LFS" $ubuntuDistro
+
+# Credential helper and other config
+Write-Info "Configuring Git credential helper and merge tool..."
+Invoke-WSLCommand "git config --global credential.helper '/mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe'" "Setting credential helper" $ubuntuDistro
+Invoke-WSLCommand "git config --global credential.useHttpPath true" "Setting credential.useHttpPath" $ubuntuDistro
+Invoke-WSLCommand "git config --global merge.tool vscode" "Setting merge.tool vscode" $ubuntuDistro
+Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait $MERGED'" "Setting mergetool.vscode.cmd" $ubuntuDistro
 
 # Configure Git line endings for cross-platform compatibility in WSL
 Write-Info "Configuring Git line endings for cross-platform compatibility in WSL..."
