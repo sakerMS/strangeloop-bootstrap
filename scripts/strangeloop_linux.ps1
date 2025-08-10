@@ -655,19 +655,34 @@ Invoke-WSLCommand "git config --global core.autocrlf false" "Setting Git autocrl
 Invoke-WSLCommand "git config --global core.eol lf" "Setting Git eol" $ubuntuDistro
 Write-Success "Git line endings configured in WSL (LF for Linux/Windows compatibility)"
 
-# Check Git LFS installation
-$gitLfsVersion = Get-WSLCommandOutput "git lfs version 2>/dev/null" $ubuntuDistro
-if ($gitLfsVersion) {
-    # Extract just the version number for cleaner display
-    $versionMatch = $gitLfsVersion -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)"
-    if ($versionMatch) {
-        Write-Success "Git LFS is already installed (version: $($matches[1]))"
+    # Check Git LFS installation
+    $gitLfsVersion = Get-WSLCommandOutput "git lfs version 2>/dev/null" $ubuntuDistro
+    if ($gitLfsVersion) {
+        # Extract just the version number for cleaner display
+        $versionMatch = $gitLfsVersion -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)"
+        if ($versionMatch) {
+            Write-Success "Git LFS is already installed (version: $($matches[1]))"
+        } else {
+            Write-Success "Git LFS is already installed ($gitLfsVersion)"
+        }
     } else {
-        Write-Success "Git LFS is already installed ($gitLfsVersion)"
+        # Try to install git-lfs if not present
+        Write-Info "Git LFS not found, attempting installation..."
+        $installResult = Invoke-WSLCommand "sudo apt-get update && sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro $sudoPassword
+        if ($installResult) {
+            Write-Success "Git LFS installed successfully."
+        } else {
+            Write-Warning "Git LFS installation may have failed. Attempting to configure anyway..."
+        }
+        # Try to run git lfs install and capture output
+        $lfsInstallResult = Get-WSLCommandOutput "git lfs install 2>&1" $ubuntuDistro
+        if ($lfsInstallResult -and $lfsInstallResult -notmatch "fatal|error|not found") {
+            Write-Success "Git LFS configured: $lfsInstallResult"
+        } else {
+            Write-Warning "git lfs install failed: $lfsInstallResult"
+            Write-Info "Manual command: wsl -d $ubuntuDistro -- git lfs install"
+        }
     }
-} else {
-    Invoke-WSLCommand "git lfs install" "Configuring Git LFS" $ubuntuDistro
-}
 
 # Step 5: Docker Setup
 Write-Step "Docker Configuration"
