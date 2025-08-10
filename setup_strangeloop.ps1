@@ -7,7 +7,7 @@
 #   -SkipDevelopmentTools : Skip development tools installation
 #   -MaintenanceMode      : Update packages only (for existing installations)
 #   -Verbose              : Enable detailed logging for troubleshooting
-#   (Default) Prefetches all scripts to ./scripts (with overwrite prompt) and runs from local files
+#   (Default) Prefetches all scripts to ./temp-strangeloop-scripts (with overwrite prompt) and runs from local files
 #   -UserName            : Git username for configuration
 #   -UserEmail           : Git email for configuration
 #   -BaseUrl             : Custom base URL for script downloads
@@ -20,6 +20,7 @@ param(
     [switch]$MaintenanceMode,
     [switch]$Verbose,
     [switch]$WhatIf,
+    [switch]$PrefetchOnly,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
@@ -68,7 +69,10 @@ if ($Verbose) {
 if ($WhatIf) {
     Write-Host "🔍 WHATIF MODE ENABLED - No operations will be executed" -ForegroundColor Yellow
 }
-Write-Host "📦 Prefetch mode: will download all scripts to ./scripts and run from local files" -ForegroundColor Yellow
+Write-Host "📦 Prefetch mode: will download all scripts to ./temp-strangeloop-scripts and run from local files" -ForegroundColor Yellow
+if ($PrefetchOnly) {
+    Write-Host "🛠 PrefetchOnly: will only download/repair cached scripts and exit (no setup executed)" -ForegroundColor Yellow
+}
 
 # Function to download script content
 function Get-ScriptFromUrl {
@@ -178,16 +182,31 @@ function Sanitize-DownloadedScript {
     )
 
     $original = $Content
-    # Normalize newlines to LF to reduce CR/LF mishaps, then back to CRLF for PowerShell readability
-    $normalized = ($Content -replace "\r\n", "\n")
+
+    # Detect and unescape literal escape sequences (e.g., "\n") whenever present
+    $hasEscapedNewlines = ($Content -match "\\n|\\r")
+    if ($hasEscapedNewlines) {
+        if ($Verbose) { Write-Verbose "Detected literal newline escape sequences in $ScriptName; unescaping" }
+        # Convert common literal escapes to their actual characters
+        $Content = $Content -replace "\\r\\n", "`n"
+        $Content = $Content -replace "\\n", "`n"
+        $Content = $Content -replace "\\r", "`n"
+        $Content = $Content -replace "\\t", "`t"
+    }
+
+    # Normalize newlines to LF to reduce CR/LF mishaps (handle CRLF and bare CR)
+    $normalized = ($Content -replace "`r`n", "`n")
+    $normalized = ($normalized -replace "`r", "`n")
 
     # Remove/replace specific corrupt tokens observed in remote scripts
     # Example: a stray "}n Entry Point" token injected after a closing brace
     $normalized = $normalized -replace "}\s*n Entry Point", "}\n# Main Entry Point"
-    # Also handle a standalone line starting with just "n Entry Point"
-    $normalized = ($normalized -split "\n") | ForEach-Object {
+    # Also handle a standalone line starting with just "n Entry Point" using a safe join
+    $lines = $normalized -split "\n"
+    $lines = $lines | ForEach-Object {
         if ($_ -match '^\s*n Entry Point\s*$') { '# Main Entry Point' } else { $_ }
-    } | Out-String
+    }
+    $normalized = [string]::Join("\n", $lines)
 
     # Restore CRLF for temp-file execution
     $sanitized = ($normalized -replace "\n", "`r`n")
@@ -269,7 +288,11 @@ function Save-ScriptToPath {
 
     $content = Get-ScriptFromUrl -Url $Url -ScriptName $Name
     $content = Sanitize-DownloadedScript -Content $content -ScriptName $Name
-    Set-Content -Path $Path -Value $content -Encoding UTF8
+    # Ensure CRLF endings before writing to file to avoid single-line issues
+    $normalizedContent = ($content -replace "`r`n", "`n")
+    $normalizedContent = ($normalizedContent -replace "`r", "`n")
+    $normalizedContent = ($normalizedContent -replace "\n", "`r`n")
+    Set-Content -Path $Path -Value $normalizedContent -Encoding UTF8
     Write-Host "✓ Saved $Name to $Path" -ForegroundColor Green
     return $Path
 }
@@ -294,16 +317,17 @@ if ($Verbose) {
 }
 Write-Host ""
 
-# Define script URLs (remote) and local paths
+# Define script URLs (remote) and local cache paths
 $scriptUrls = @{
     "Main" = "$BaseUrl/scripts/strangeloop_main.ps1"
     "Linux" = "$BaseUrl/scripts/strangeloop_linux.ps1"
     "Windows" = "$BaseUrl/scripts/strangeloop_windows.ps1"
 }
+$localCacheDir = Join-Path $PSScriptRoot "temp-strangeloop-scripts"
 $localScripts = @{
-    "Main" = Join-Path $PSScriptRoot "scripts/strangeloop_main.ps1"
-    "Linux" = Join-Path $PSScriptRoot "scripts/strangeloop_linux.ps1"
-    "Windows" = Join-Path $PSScriptRoot "scripts/strangeloop_windows.ps1"
+    "Main" = Join-Path $localCacheDir "strangeloop_main.ps1"
+    "Linux" = Join-Path $localCacheDir "strangeloop_linux.ps1"
+    "Windows" = Join-Path $localCacheDir "strangeloop_windows.ps1"
 }
 
 if ($Verbose) {
@@ -311,7 +335,7 @@ if ($Verbose) {
     foreach ($script in $scriptUrls.GetEnumerator()) {
         Write-Verbose "- $($script.Key): $($script.Value)"
     }
-    Write-Verbose "Local script paths:"
+    Write-Verbose "Local cache script paths (temp-strangeloop-scripts):"
     foreach ($script in $localScripts.GetEnumerator()) {
         Write-Verbose "- $($script.Key): $($script.Value)"
     }
@@ -323,15 +347,20 @@ try {
     # Decide overwrite behavior once for all files
     $globalOverwrite = $null
     if ($WhatIf) {
-        Write-Host "WhatIf: Would prompt once to overwrite existing files (default Yes)" -ForegroundColor Yellow
+        Write-Host "WhatIf: Would prompt once to overwrite existing files in $localCacheDir (default Yes)" -ForegroundColor Yellow
         $globalOverwrite = $true
     } else {
+        if ($PrefetchOnly) {
+            # In PrefetchOnly mode, default to overwrite to ensure repair
+            $globalOverwrite = $true
+        } else {
         # Determine if any target files exist
         $targetsExist = @($localScripts.Main, $localScripts.Linux, $localScripts.Windows) | ForEach-Object { Test-Path -Path $_ -PathType Leaf } | Where-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
         if ($targetsExist -gt 0) {
-            $globalOverwrite = Prompt-YesNo -Message "One or more files already exist in ./scripts. Overwrite all?" -DefaultYes:$true
+            $globalOverwrite = Prompt-YesNo -Message "One or more files already exist in $localCacheDir. Overwrite all?" -DefaultYes:$true
         } else {
             $globalOverwrite = $true
+        }
         }
     }
 
@@ -339,8 +368,47 @@ try {
     $savedLinux   = Save-ScriptToPath -Url $scriptUrls.Linux   -Path $localScripts.Linux   -Name "strangeloop_linux.ps1"   -PromptOverwrite:$false -OverwriteChoice:$globalOverwrite
     $savedWindows = Save-ScriptToPath -Url $scriptUrls.Windows -Path $localScripts.Windows -Name "strangeloop_windows.ps1" -PromptOverwrite:$false -OverwriteChoice:$globalOverwrite
 
-    # Load main content from the saved local file
-    $mainScriptContent = Get-Content -Path $savedMain -Raw -ErrorAction Stop
+    # Repair any cached scripts that might have been saved with literal "\n" sequences (from previous runs)
+    if (-not $WhatIf) {
+    function Repair-LiteralEscapesInFile {
+            param([string]$Path, [string]$Name)
+            try {
+                if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+                $raw = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+        $hasEscapes = ($raw -match "\\n|\\r")
+        if ($hasEscapes) {
+                    Write-Host "Detected literal \\n sequences in $Name; repairing line endings" -ForegroundColor Yellow
+                    $fixed = $raw -replace "\\r\\n", "`n"
+                    $fixed = $fixed -replace "\\n", "`n"
+                    $fixed = $fixed -replace "\\r", "`n"
+                    $fixed = $fixed -replace "\\t", "`t"
+                    # Write back as CRLF
+                    $fixed = ($fixed -replace "\n", "`r`n")
+                    Set-Content -LiteralPath $Path -Value $fixed -Encoding UTF8
+                    Write-Host "✓ Repaired $Name" -ForegroundColor Green
+                }
+            } catch {
+                Write-Verbose "Repair check failed for $Name at ${Path}: $($_.Exception.Message)"
+            }
+        }
+        Repair-LiteralEscapesInFile -Path $savedMain -Name "strangeloop_main.ps1"
+        Repair-LiteralEscapesInFile -Path $savedLinux -Name "strangeloop_linux.ps1"
+        Repair-LiteralEscapesInFile -Path $savedWindows -Name "strangeloop_windows.ps1"
+    }
+
+    # If only prefetch/repair is requested, exit early
+    if ($PrefetchOnly) {
+        Write-Host "`n=== Prefetch/Repair Complete ===" -ForegroundColor Green
+        Write-Host "Cached scripts saved to: $localCacheDir" -ForegroundColor Gray
+        return 0
+    }
+
+    # Load main content from the saved local file unless in WhatIf (preview only)
+    if ($WhatIf) {
+        $mainScriptContent = ''
+    } else {
+        $mainScriptContent = Get-Content -Path $savedMain -Raw -ErrorAction Stop
+    }
     
     # Prepare parameters for main script
     $mainParams = @{
@@ -372,7 +440,7 @@ try {
         Write-Host "  • Target scripts: strangeloop_main.ps1 (local)" -ForegroundColor Gray
         if (-not $SkipDevelopmentTools) {
             Write-Host "  • Platform-specific setup (Linux/Windows)" -ForegroundColor Gray
-            Write-Host "    - Using local OS setup scripts from ./scripts" -ForegroundColor Gray
+            Write-Host "    - Using local OS setup scripts from $localCacheDir" -ForegroundColor Gray
         }
         Write-Host "`nNo actual operations performed in WhatIf mode." -ForegroundColor Yellow
         return 0
