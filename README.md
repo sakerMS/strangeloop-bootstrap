@@ -47,6 +47,12 @@ strangeloop-bootstrap/
   - Use when: Debugging issues or wanting detailed output
   - Example: `.\setup_strangeloop.ps1 -Verbose`
 
+- **`-WhatIf`** - Preview mode - show what would be done without executing
+  - Shows: All operations that would be performed
+  - Executes: No actual installation or configuration changes
+  - Use when: Testing parameters, validating setup before execution
+  - Example: `.\setup_strangeloop.ps1 -WhatIf`
+
 ## 🎯 **Component Overview**
 
 ### Primary Script (User Entry Point)

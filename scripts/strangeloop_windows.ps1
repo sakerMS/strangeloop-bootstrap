@@ -1,4 +1,11 @@
-# StrangeLoop CLI Setup Script - Windows Dependencies
+# StrangeLoop CLI Setup S# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "🔍 VERBOSE MODE ENABLED in Windows setup" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED in Windows setup - Preview mode" -ForegroundColor Yellow
+} - Windows Dependencies
 # Handles Windows-specific development environment setup
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
@@ -11,11 +18,12 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\Setup-StrangeLoop-Windows.ps1 [-MaintenanceMode]
+# Usage: .\strangeloop_windows.ps1 [-MaintenanceMode] [-Verbose] [-WhatIf]
 
 param(
     [switch]$MaintenanceMode,
-    [switch]$Verbose
+    [switch]$Verbose,
+    [switch]$WhatIf
 )
 
 # Error handling
@@ -37,6 +45,12 @@ function Invoke-CommandWithDuration {
     )
     
     Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    
+    if ($WhatIf) {
+        Write-Host "  ⚪ WhatIf: Would execute - $Description" -ForegroundColor Yellow
+        return $null
+    }
+    
     $startTime = Get-Date
     
     try {

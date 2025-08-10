@@ -1,4 +1,11 @@
-# StrangeLoop CLI Setup Script - Main Entry Point
+# StrangeLoop CLI Setup Script # Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "🔍 VERBOSE MODE ENABLED in main orchestrator" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED in main orchestrator - Preview mode" -ForegroundColor Yellow
+}n Entry Point
 # Automated setup following readme.md requirements
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
@@ -11,13 +18,14 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\strangeloop_main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-MaintenanceMode] [-UserName "Name"] [-UserEmail "email@domain.com"]
+# Usage: .\strangeloop_main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-MaintenanceMode] [-WhatIf] [-UserName "Name"] [-UserEmail "email@domain.com"]
 
 param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
     [switch]$MaintenanceMode,
     [switch]$Verbose,
+    [switch]$WhatIf,
     [string]$UserName,
     [string]$UserEmail,
     [string]$LinuxScriptUrl,
@@ -109,6 +117,13 @@ function Invoke-CommandWithDuration {
     )
     
     Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    
+    if ($WhatIf) {
+        Write-WhatIf $Description
+        Write-Host "  ⚪ Skipped in WhatIf mode" -ForegroundColor Gray
+        return $null
+    }
+    
     $startTime = Get-Date
     
     try {
@@ -162,6 +177,26 @@ function Write-Info {
     Write-Host "$Message" -ForegroundColor $Colors.Info
 }
 
+function Write-WhatIf {
+    param([string]$Message, [string]$Action = "Would execute")
+    if ($WhatIf) {
+        Write-Host "WhatIf: $Action - $Message" -ForegroundColor Yellow
+        return $true
+    }
+    return $false
+}
+
+function Invoke-WhatIfCommand {
+    param([string]$Description, [scriptblock]$ScriptBlock)
+    
+    if ($WhatIf) {
+        Write-WhatIf $Description
+        return $null
+    } else {
+        return & $ScriptBlock
+    }
+}
+
 function Test-Command {
     param([string]$Command)
     Write-Verbose "Testing command availability: $Command"
@@ -180,6 +215,11 @@ function Test-Command {
 
 function Get-UserInput {
     param([string]$Prompt, [string]$DefaultValue = "", [bool]$Required = $false)
+    
+    if ($WhatIf) {
+        Write-WhatIf "Prompt user: $Prompt" "Would prompt"
+        return $DefaultValue
+    }
     
     do {
         if ($DefaultValue) {
@@ -264,6 +304,7 @@ if ($MaintenanceMode) {
                 if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
                 if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
                 if ($Verbose) { $linuxParams.Verbose = $Verbose }
+                if ($WhatIf) { $linuxParams.WhatIf = $WhatIf }
                 
                 if ($Verbose) {
                     Write-Verbose "Parameters for Linux script (maintenance):"
@@ -296,6 +337,7 @@ if ($MaintenanceMode) {
                 $windowsParams = @{}
                 if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
                 if ($Verbose) { $windowsParams.Verbose = $Verbose }
+                if ($WhatIf) { $windowsParams.WhatIf = $WhatIf }
                 
                 if ($Verbose) {
                     Write-Verbose "Parameters for Windows script (maintenance):"
@@ -619,6 +661,7 @@ if (-not $SkipDevelopmentTools) {
                 if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
                 if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
                 if ($Verbose) { $linuxParams.Verbose = $Verbose }
+                if ($WhatIf) { $linuxParams.WhatIf = $WhatIf }
                 
                 $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
                 if ($exitCode -ne 0) {
@@ -644,6 +687,7 @@ if (-not $SkipDevelopmentTools) {
                 $windowsParams = @{}
                 if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
                 if ($Verbose) { $windowsParams.Verbose = $Verbose }
+                if ($WhatIf) { $windowsParams.WhatIf = $WhatIf }
                 # Windows script doesn't currently take user parameters, but prepared for future
                 
                 $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams

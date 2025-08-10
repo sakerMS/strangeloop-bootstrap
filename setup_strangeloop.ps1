@@ -18,6 +18,7 @@ param(
     [switch]$SkipDevelopmentTools,
     [switch]$MaintenanceMode,
     [switch]$Verbose,
+    [switch]$WhatIf,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
@@ -30,7 +31,10 @@ Set-StrictMode -Version Latest
 # Enable verbose output if Verbose is specified
 if ($Verbose) {
     $VerbosePreference = "Continue"
-    Write-Host "� VERBOSE MODE ENABLED - Detailed logging activated" -ForegroundColor Cyan
+    Write-Host "🔍 VERBOSE MODE ENABLED - Detailed logging activated" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED - No operations will be executed" -ForegroundColor Yellow
 }
 
 # Function to download script content
@@ -140,6 +144,7 @@ try {
         SkipDevelopmentTools = $SkipDevelopmentTools
         MaintenanceMode = $MaintenanceMode
         Verbose = $Verbose
+        WhatIf = $WhatIf
         UserName = $UserName
         UserEmail = $UserEmail
         # Pass script URLs to main script so it can download Linux/Windows scripts
@@ -152,6 +157,20 @@ try {
         foreach ($param in $mainParams.GetEnumerator()) {
             Write-Verbose "- $($param.Key): $($param.Value)"
         }
+    }
+    
+    if ($WhatIf) {
+        Write-Host "`n=== WhatIf Mode - Script Execution Preview ===" -ForegroundColor Yellow
+        Write-Host "Would execute main script with the following operations:" -ForegroundColor Gray
+        Write-Host "  • Prerequisites check (skipped: $SkipPrerequisites)" -ForegroundColor Gray
+        Write-Host "  • Development tools setup (skipped: $SkipDevelopmentTools)" -ForegroundColor Gray
+        Write-Host "  • Maintenance mode: $MaintenanceMode" -ForegroundColor Gray
+        Write-Host "  • Target scripts: strangeloop_main.ps1" -ForegroundColor Gray
+        if (-not $SkipDevelopmentTools) {
+            Write-Host "  • Platform-specific setup (Linux/Windows)" -ForegroundColor Gray
+        }
+        Write-Host "`nNo actual operations performed in WhatIf mode." -ForegroundColor Yellow
+        return 0
     }
     
     Write-Host "`n=== Executing Main Setup Script ===" -ForegroundColor Cyan

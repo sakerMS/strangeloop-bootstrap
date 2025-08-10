@@ -1,4 +1,11 @@
-# StrangeLoop CLI Setup Script - Linux/WSL Dependencies
+# StrangeLoop CLI Setup Scr# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "🔍 VERBOSE MODE ENABLED in Linux setup" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED in Linux setup - Preview mode" -ForegroundColor Yellow
+} Linux/WSL Dependencies
 # Handles Linux/WSL-specific development environment setup
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
@@ -11,11 +18,12 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+, WSL capability
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\Setup-StrangeLoop-Linux.ps1 [-UserName "Name"] [-UserEmail "email@domain.com"]
+# Usage: .\strangeloop_linux.ps1 [-MaintenanceMode] [-Verbose] [-WhatIf] [-UserName "Name"] [-UserEmail "email@domain.com"]
 
 param(
     [switch]$MaintenanceMode,
     [switch]$Verbose,
+    [switch]$WhatIf,
     [string]$UserName,
     [string]$UserEmail
 )
@@ -42,6 +50,12 @@ function Invoke-CommandWithDuration {
     )
     
     Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    
+    if ($WhatIf) {
+        Write-Host "  ⚪ WhatIf: Would execute - $Description" -ForegroundColor Yellow
+        return $null
+    }
+    
     $startTime = Get-Date
     
     try {
