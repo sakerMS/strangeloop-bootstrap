@@ -306,6 +306,14 @@ function Open-VSCode {
     if ($IsWSL) {
         $resolved = Resolve-WSLPath -Path $Path -Distribution $Distribution
 
+        # 1) Prefer explicit Remote-WSL open via folder URI using Windows Code CLI
+        $remoteUri = "vscode-remote://wsl+$Distribution$resolved"
+        try {
+            Start-Process code -ArgumentList "-n", "--folder-uri", "$remoteUri" | Out-Null
+            Write-Info "Opening VS Code (Remote - WSL) at: $resolved"
+            return
+        } catch { }
+
         # Check if VS Code CLI is available inside WSL
         $codeExistsWSL = $false
         try {
@@ -330,10 +338,11 @@ function Open-VSCode {
             return
         } catch { }
 
-        # Final guidance
-        Write-Info "Couldn't launch VS Code automatically. Open manually:"
-        Write-Host "  • From WSL:    code '$resolved'" -ForegroundColor Yellow
-        Write-Host "  • From Windows: $windowsPath" -ForegroundColor Yellow
+    # Final guidance
+    Write-Info "Couldn't launch VS Code automatically. Open manually:"
+    Write-Host "  • Remote-WSL (Windows): code --folder-uri 'vscode-remote://wsl+$Distribution$resolved'" -ForegroundColor Yellow
+    Write-Host "  • From WSL:             code '$resolved'" -ForegroundColor Yellow
+    Write-Host "  • From Windows (UNC):   $windowsPath" -ForegroundColor Yellow
         return
     }
 
