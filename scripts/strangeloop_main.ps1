@@ -11,11 +11,16 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\Setup-StrangeLoop-Main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-UserName "Name"] [-UserEmail "email@domain.com"]
+# Usage: .\Setup-StrangeLoop-Main.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-MaintenanceMode] [-UserName "Nam        Write-Info "Setting up Windows environment..."
+        if ($WindowsScriptUrl) {
+            Write-Info "Downloading Windows setup script from: $WindowsScriptUrl"
+            try {
+                $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "strangeloop_windows.ps1"-UserEmail "email@domain.com"]
 
 param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
+    [switch]$MaintenanceMode,
     [string]$UserName,
     [string]$UserEmail,
     [string]$LinuxScriptUrl,
@@ -186,8 +191,99 @@ if ((Get-ExecutionPolicy) -eq 'Restricted') {
     exit 1
 }
 
-# Get script directory for fallback to local scripts (if URLs not provided)
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Maintenance Mode - Skip to OS-specific package updates only
+if ($MaintenanceMode) {
+    Write-Host @"
+╔═══════════════════════════════════════════════════════════════╗
+║              StrangeLoop CLI Setup - Maintenance Mode         ║
+║                    Package Updates Only                       ║
+╚═══════════════════════════════════════════════════════════════╝
+"@ -ForegroundColor $Colors.Success
+    
+    Write-Info "Running in Maintenance Mode - updating packages only"
+    Write-Info "Skipping StrangeLoop installation and template analysis"
+    
+    # Jump directly to OS-specific setup
+    # Determine platform quickly for maintenance
+    Write-Step "Determining Platform for Package Updates"
+    $needsLinux = $true  # Default to Linux/WSL for maintenance
+    
+    # Quick WSL check - if WSL is available and has distributions, prefer it
+    if (Test-Command "wsl") {
+        $wslDistros = wsl -l -v 2>$null
+        if ($wslDistros -and ($wslDistros | Where-Object { $_ -match "Ubuntu" })) {
+            $needsLinux = $true
+            Write-Info "Found WSL Ubuntu - will update Linux environment"
+        } else {
+            $needsLinux = $false
+            Write-Info "No WSL Ubuntu found - will update Windows environment"
+        }
+    } else {
+        $needsLinux = $false
+        Write-Info "WSL not available - will update Windows environment"
+    }
+    
+    # Jump to Step 4 (OS-specific setup)
+    Write-Step "Updating Development Environment Packages"
+    
+    if ($needsLinux) {
+        Write-Info "Updating Linux/WSL environment packages..."
+        if ($LinuxScriptUrl) {
+            Write-Info "Downloading Linux setup script from: $LinuxScriptUrl"
+            try {
+                $linuxScriptContent = Get-ScriptFromUrl $LinuxScriptUrl "strangeloop_linux.ps1"
+                
+                $linuxParams = @{}
+                if ($UserName) { $linuxParams.UserName = $UserName }
+                if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
+                if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
+                
+                $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
+                if ($exitCode -ne 0) {
+                    Write-Error "Linux/WSL package update failed with exit code: $exitCode"
+                    exit 1
+                }
+                Write-Success "Linux/WSL package update completed successfully"
+            } catch {
+                Write-Error "Failed to download or execute Linux setup script: $($_.Exception.Message)"
+                exit 1
+            }
+        } else {
+            Write-Error "Linux setup script URL not provided"
+            exit 1
+        }
+    } else {
+        Write-Info "Updating Windows environment packages..."
+        if ($WindowsScriptUrl) {
+            Write-Info "Downloading Windows setup script from: $WindowsScriptUrl"
+            try {
+                $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "strangeloop_windows.ps1"
+                
+                $windowsParams = @{}
+                if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
+                
+                $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams
+                if ($exitCode -ne 0) {
+                    Write-Error "Windows package update failed with exit code: $exitCode"
+                    exit 1
+                }
+                Write-Success "Windows package update completed successfully"
+            } catch {
+                Write-Error "Failed to download or execute Windows setup script: $($_.Exception.Message)"
+                exit 1
+            }
+        } else {
+            Write-Error "Windows setup script URL not provided"
+            exit 1
+        }
+    }
+    
+    # Maintenance mode completion
+    Write-Step "Maintenance Complete" "Green"
+    Write-Success "✓ Package updates completed successfully"
+    Write-Info "Maintenance mode finished. All packages have been updated."
+    exit 0
+}
 
 # Step 1: Prerequisites Check
 if (-not $SkipPrerequisites) {
@@ -474,11 +570,12 @@ if (-not $SkipDevelopmentTools) {
         if ($LinuxScriptUrl) {
             Write-Info "Downloading Linux setup script from: $LinuxScriptUrl"
             try {
-                $linuxScriptContent = Get-ScriptFromUrl $LinuxScriptUrl "setup_strangeloop_linux.ps1"
+                $linuxScriptContent = Get-ScriptFromUrl $LinuxScriptUrl "strangeloop_linux.ps1"
                 
                 $linuxParams = @{}
                 if ($UserName) { $linuxParams.UserName = $UserName }
                 if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
+                if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
                 
                 $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
                 if ($exitCode -ne 0) {
@@ -491,33 +588,18 @@ if (-not $SkipDevelopmentTools) {
                 exit 1
             }
         } else {
-            # Fallback to local script if URL not provided
-            Write-Info "Using local Linux setup script..."
-            $linuxScriptPath = Join-Path $scriptDir "setup_strangeloop_linux.ps1"
-            if (Test-Path $linuxScriptPath) {
-                $linuxParams = @()
-                if ($UserName) { $linuxParams += "-UserName", "`"$UserName`"" }
-                if ($UserEmail) { $linuxParams += "-UserEmail", "`"$UserEmail`"" }
-                
-                & $linuxScriptPath @linuxParams
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Error "Linux/WSL setup failed. Please check the error messages above."
-                    exit 1
-                }
-                Write-Success "Linux/WSL environment setup completed successfully"
-            } else {
-                Write-Error "Linux setup script not found locally and no URL provided"
-                exit 1
-            }
+            Write-Error "Linux setup script URL not provided"
+            exit 1
         }
     } else {
         Write-Info "Setting up Windows environment..."
         if ($WindowsScriptUrl) {
             Write-Info "Downloading Windows setup script from: $WindowsScriptUrl"
             try {
-                $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "setup_strangeloop_windows.ps1"
+                $windowsScriptContent = Get-ScriptFromUrl $WindowsScriptUrl "strangeloop_windows.ps1"
                 
                 $windowsParams = @{}
+                if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
                 # Windows script doesn't currently take user parameters, but prepared for future
                 
                 $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams
@@ -531,20 +613,8 @@ if (-not $SkipDevelopmentTools) {
                 exit 1
             }
         } else {
-            # Fallback to local script if URL not provided
-            Write-Info "Using local Windows setup script..."
-            $windowsScriptPath = Join-Path $scriptDir "setup_strangeloop_windows.ps1"
-            if (Test-Path $windowsScriptPath) {
-                & $windowsScriptPath
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Error "Windows setup failed. Please check the error messages above."
-                    exit 1
-                }
-                Write-Success "Windows environment setup completed successfully"
-            } else {
-                Write-Error "Windows setup script not found locally and no URL provided"
-                exit 1
-            }
+            Write-Error "Windows setup script URL not provided"
+            exit 1
         }
     }
 }

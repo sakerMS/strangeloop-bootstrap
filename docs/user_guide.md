@@ -34,11 +34,17 @@ The bootstrap script will:
 # Skip development tools installation
 .\setup_strangeloop.ps1 -SkipDevelopmentTools
 
+# Maintenance mode (update packages only)
+.\setup_strangeloop.ps1 -MaintenanceMode
+
 # Set Git user configuration
 .\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
 
 # Combine multiple options
 .\setup_strangeloop.ps1 -SkipPrerequisites -UserName "Your Name" -UserEmail "your.email@company.com"
+
+# Maintenance mode with custom user settings
+.\setup_strangeloop.ps1 -MaintenanceMode -UserName "Your Name" -UserEmail "your.email@company.com"
 
 # Use custom repository URL
 .\setup_strangeloop.ps1 -BaseUrl "https://raw.githubusercontent.com/your-fork/strangeloop-bootstrap/main"
@@ -49,14 +55,14 @@ The bootstrap script will:
 ### **Modular Design**
 ```
 setup_strangeloop.ps1           # 🚀 Main launcher (download this)
-├── scripts/setup_strangeloop_main.ps1   # 🎯 Main orchestrator
-├── scripts/setup_strangeloop_linux.ps1  # 🐧 Linux/WSL setup
-└── scripts/setup_strangeloop_windows.ps1 # 🪟 Windows setup
+├── scripts/strangeloop_main.ps1   # 🎯 Main orchestrator
+├── scripts/strangeloop_linux.ps1  # 🐧 Linux/WSL setup
+└── scripts/strangeloop_windows.ps1 # 🪟 Windows setup
 ```
 
 ### **Smart Features**
 - **📥 Dynamic Downloads**: Latest scripts downloaded automatically
-- **🔄 Fallback Mechanism**: Uses local scripts if download fails
+- **🌐 Always Current**: Uses latest repository scripts
 - **🎨 Rich Output**: Color-coded status messages and progress
 - **⚡ Platform Detection**: Automatically configures for your environment
 - **🛡️ Error Handling**: Comprehensive error recovery and troubleshooting
@@ -75,8 +81,12 @@ cd strangeloop-bootstrap
 .\setup_strangeloop.ps1
 ```
 
-### **Option 3: Local Scripts**
-If downloads fail, the script automatically falls back to local versions.
+### **Option 3: Custom Repository**
+You can specify a custom repository URL for enterprise deployments:
+
+```powershell
+.\setup_strangeloop.ps1 -BaseUrl "https://raw.githubusercontent.com/your-org/strangeloop-bootstrap/main"
+```
 
 ## 🎯 **Supported Templates**
 
@@ -122,11 +132,38 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 Right-click PowerShell → "Run as Administrator"
 ```
 
+### **Reset Everything (Start Over)**
+
+If you encounter persistent issues or want to completely start over:
+
+```powershell
+# Download reset script
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
+
+# Basic reset (removes everything)
+.\reset_strangeloop.ps1
+
+# Reset with options
+.\reset_strangeloop.ps1 -KeepWSL          # Keep WSL Ubuntu distribution
+.\reset_strangeloop.ps1 -KeepGit          # Keep Git global configuration
+.\reset_strangeloop.ps1 -WhatIf           # Preview what would be reset
+.\reset_strangeloop.ps1 -Force            # Skip all confirmations
+```
+
+**What the reset script removes:**
+- ✅ StrangeLoop CLI installation
+- ✅ Python packages (pipx, Poetry packages)
+- ✅ WSL Ubuntu distribution (optional)
+- ✅ Git global configuration changes (optional)
+- ✅ Environment variables
+- ✅ Docker networks created by setup
+- ✅ Temporary files
+
 ### **Getting Help**
 - **📝 Create an Issue**: Use GitHub Issues for bug reports
 - **📖 Documentation**: Check `/docs` folder for detailed guides
 - **💬 Discussions**: Use GitHub Discussions for questions
-- **🔄 Fallback**: Local scripts always work as backup
+- **🔄 Reset Script**: Use reset script to resolve issues and start over
 
 ---
 

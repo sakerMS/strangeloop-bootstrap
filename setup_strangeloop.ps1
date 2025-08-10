@@ -2,11 +2,20 @@
 # This launcher script downloads and executes the modular setup scripts
 # 
 # Usage: .\setup_strangeloop.ps1 [parameters]
+# Parameters:
+#   -SkipPrerequisites    : Skip system prerequisite installation
+#   -SkipDevelopmentTools : Skip development tools installation
+#   -MaintenanceMode      : Update packages only (for existing installations)
+#   -UserName            : Git username for configuration
+#   -UserEmail           : Git email for configuration
+#   -BaseUrl             : Custom base URL for script downloads
+# 
 # All scripts are downloaded from GitHub and executed dynamically
 
 param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
+    [switch]$MaintenanceMode,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
@@ -82,20 +91,21 @@ Write-Host ""
 
 # Define script URLs
 $scriptUrls = @{
-    "Main" = "$BaseUrl/scripts/setup_strangeloop_main.ps1"
-    "Linux" = "$BaseUrl/scripts/setup_strangeloop_linux.ps1"
-    "Windows" = "$BaseUrl/scripts/setup_strangeloop_windows.ps1"
+    "Main" = "$BaseUrl/scripts/strangeloop_main.ps1"
+    "Linux" = "$BaseUrl/scripts/strangeloop_linux.ps1"
+    "Windows" = "$BaseUrl/scripts/strangeloop_windows.ps1"
 }
 
 try {
     # Download the main script
     Write-Host "=== Downloading Main Setup Script ===" -ForegroundColor Cyan
-    $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "setup_strangeloop_main.ps1"
+    $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "strangeloop_main.ps1"
     
     # Prepare parameters for main script
     $mainParams = @{
         SkipPrerequisites = $SkipPrerequisites
         SkipDevelopmentTools = $SkipDevelopmentTools
+        MaintenanceMode = $MaintenanceMode
         UserName = $UserName
         UserEmail = $UserEmail
         # Pass script URLs to main script so it can download Linux/Windows scripts
@@ -114,39 +124,15 @@ try {
     }
     
 } catch {
-    # Fallback to local scripts if download fails and local scripts exist
-    $localMainScript = ".\scripts\setup_strangeloop_main.ps1"
-    if (Test-Path $localMainScript) {
-        Write-Host "`n=== Download Failed - Using Local Scripts ===" -ForegroundColor Yellow
-        Write-Host "✓ Found local scripts, proceeding with local execution..." -ForegroundColor Green
-        
-        # Prepare parameters for local script execution
-        $localParams = @()
-        if ($SkipPrerequisites) { $localParams += "-SkipPrerequisites" }
-        if ($SkipDevelopmentTools) { $localParams += "-SkipDevelopmentTools" }
-        if ($UserName) { $localParams += "-UserName", "`"$UserName`"" }
-        if ($UserEmail) { $localParams += "-UserEmail", "`"$UserEmail`"" }
-        
-        # Execute local main script
-        & $localMainScript @localParams
-        $exitCode = $LASTEXITCODE
-        
-        if ($exitCode -eq 0) {
-            Write-Host "`n✓ StrangeLoop setup completed successfully using local scripts!" -ForegroundColor Green
-        } else {
-            Write-Host "`n⚠ Setup completed with exit code: $exitCode" -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "`n=== Setup Failed ===" -ForegroundColor Red
-        Write-Host "✗ Error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "`nTroubleshooting:" -ForegroundColor Yellow
-        Write-Host "1. Check your internet connection" -ForegroundColor Gray
-        Write-Host "2. Ensure you can access GitHub/external URLs" -ForegroundColor Gray
-        Write-Host "3. Verify the BaseUrl parameter is correct" -ForegroundColor Gray
-        Write-Host "4. Try running with administrator privileges" -ForegroundColor Gray
-        Write-Host "5. Download scripts manually to same folder as launcher" -ForegroundColor Gray
-        $exitCode = 1
-    }
+    Write-Host "`n=== Setup Failed ===" -ForegroundColor Red
+    Write-Host "✗ Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "`nTroubleshooting:" -ForegroundColor Yellow
+    Write-Host "1. Check your internet connection" -ForegroundColor Gray
+    Write-Host "2. Ensure you can access GitHub/external URLs" -ForegroundColor Gray
+    Write-Host "3. Verify the BaseUrl parameter is correct" -ForegroundColor Gray
+    Write-Host "4. Try running with administrator privileges" -ForegroundColor Gray
+    Write-Host "5. Check if the repository URL is accessible in your browser" -ForegroundColor Gray
+    $exitCode = 1
 }
 
 # Exit with the same code as the main script

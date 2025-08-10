@@ -11,7 +11,11 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\Setup-StrangeLoop-Windows.ps1
+# Usage: .\Setup-StrangeLoop-Windows.ps1 [-MaintenanceMode]
+
+param(
+    [switch]$MaintenanceMode
+)
 
 # Error handling
 $ErrorActionPreference = "Stop"
@@ -113,12 +117,110 @@ function Get-UserInput {
 }
 
 # Main Script
-Write-Host @"
+if ($MaintenanceMode) {
+    Write-Host @"
+╔═══════════════════════════════════════════════════════════════╗
+║           StrangeLoop CLI Setup - Windows Maintenance         ║
+║                     Package Updates Only                      ║
+╚═══════════════════════════════════════════════════════════════╝
+"@ -ForegroundColor $Colors.Success
+} else {
+    Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Windows Dependencies        ║
 ║                     Development Environment                   ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $Colors.Highlight
+}
+
+# Maintenance Mode - Focus on package updates only
+if ($MaintenanceMode) {
+    Write-Info "Running in Maintenance Mode - updating packages only"
+    Write-Info "Skipping initial environment setup"
+    
+    # Update Python packages
+    Write-Step "Python Package Updates"
+    
+    # Check if Python is available
+    if (-not (Test-Command "python")) {
+        Write-Error "Python not found. Please run full setup first (without -MaintenanceMode)"
+        exit 1
+    }
+    
+    Write-Info "Updating Python packages..."
+    
+    # Update pip itself
+    try {
+        python -m pip install --upgrade pip
+        Write-Success "Updated pip to latest version"
+    } catch {
+        Write-Warning "Failed to update pip, but continuing..."
+    }
+    
+    # Update pipx if installed
+    if (Test-Command "pipx") {
+        Write-Info "Updating pipx packages..."
+        try {
+            pipx upgrade-all
+            Write-Success "Updated all pipx packages"
+        } catch {
+            Write-Warning "Failed to update some pipx packages, but continuing..."
+        }
+    } else {
+        Write-Info "pipx not found, skipping pipx package updates"
+    }
+    
+    # Update Poetry if installed
+    $poetryInstalled = $false
+    try {
+        $poetryVersion = poetry --version 2>$null
+        if ($poetryVersion) {
+            $poetryInstalled = $true
+        }
+    } catch {
+        # Poetry not available via direct command, check pipx
+        try {
+            pipx list | Select-String "poetry" >$null
+            $poetryInstalled = $true
+        } catch {
+            $poetryInstalled = $false
+        }
+    }
+    
+    if ($poetryInstalled) {
+        Write-Info "Updating Poetry..."
+        try {
+            pipx upgrade poetry
+            Write-Success "Updated Poetry to latest version"
+        } catch {
+            Write-Warning "Failed to update Poetry, but continuing..."
+        }
+    } else {
+        Write-Info "Poetry not found, skipping Poetry update"
+    }
+    
+    # Check for Windows package manager updates
+    Write-Step "Windows Package Manager Updates"
+    
+    # Check if winget is available
+    if (Test-Command "winget") {
+        Write-Info "Updating packages via winget..."
+        try {
+            winget upgrade --all --accept-source-agreements --accept-package-agreements
+            Write-Success "Updated packages via winget"
+        } catch {
+            Write-Warning "winget upgrade failed or no updates available"
+        }
+    } else {
+        Write-Info "winget not available, skipping package manager updates"
+    }
+    
+    # Maintenance mode completion
+    Write-Step "Maintenance Complete" "Green"
+    Write-Success "✓ Windows package updates completed successfully"
+    Write-Info "Maintenance mode finished. All packages have been updated."
+    exit 0
+}
 
 # Step 1: Python Environment Setup
 Write-Step "Python Environment Setup"

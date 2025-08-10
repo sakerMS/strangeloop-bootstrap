@@ -14,6 +14,7 @@
 # Usage: .\Setup-StrangeLoop-Linux.ps1 [-UserName "Name"] [-UserEmail "email@domain.com"]
 
 param(
+    [switch]$MaintenanceMode,
     [string]$UserName,
     [string]$UserEmail
 )
@@ -262,15 +263,121 @@ function Get-UserInput {
 }
 
 # Main Script
-Write-Host @"
+if ($MaintenanceMode) {
+    Write-Host @"
+╔═══════════════════════════════════════════════════════════════╗
+║           StrangeLoop CLI Setup - Linux/WSL Maintenance       ║
+║                     Package Updates Only                      ║
+╚═══════════════════════════════════════════════════════════════╝
+"@ -ForegroundColor $Colors.Success
+} else {
+    Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Linux/WSL Dependencies      ║
 ║                     Development Environment                   ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $Colors.Highlight
+}
 
 # Define Ubuntu distribution variable
 $ubuntuDistro = "Ubuntu-24.04"
+
+# Maintenance Mode - Skip WSL setup, focus on package updates
+if ($MaintenanceMode) {
+    Write-Info "Running in Maintenance Mode - updating packages only"
+    Write-Info "Assuming WSL and Ubuntu are already configured"
+    
+    # Quick check that WSL Ubuntu exists
+    if (-not (Test-Command "wsl")) {
+        Write-Error "WSL not found. Please run full setup first (without -MaintenanceMode)"
+        exit 1
+    }
+    
+    $wslDistros = wsl -l -v 2>$null
+    $foundUbuntu = $false
+    if ($wslDistros) {
+        $wslDistros -split "`n" | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and $line -like "*$ubuntuDistro*") {
+                $foundUbuntu = $true
+            }
+        }
+    }
+    
+    if (-not $foundUbuntu) {
+        Write-Error "Ubuntu WSL distribution not found. Please run full setup first (without -MaintenanceMode)"
+        exit 1
+    }
+    
+    Write-Success "Found Ubuntu WSL distribution - proceeding with package updates"
+    
+    # Jump directly to package management (Step 2)
+    Write-Step "System Package Updates"
+    
+    # Get sudo password for package updates
+    $sudoPassword = Get-SudoPassword $ubuntuDistro
+    if ($null -eq $sudoPassword -and (Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $ubuntuDistro) -ne "NOPASSWD") {
+        Write-Error "Cannot proceed without valid sudo credentials."
+        exit 1
+    }
+    
+    # Update packages
+    Write-Info "Updating package lists..."
+    if ($null -eq $sudoPassword) {
+        $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
+    } else {
+        $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro $sudoPassword
+    }
+    
+    if (-not $updateResult) {
+        Write-Warning "Package list update may have failed. Continuing..."
+    }
+    
+    # Check for upgradeable packages
+    $upgradeableCount = Get-WSLCommandOutput "apt list --upgradeable 2>/dev/null | grep -v 'WARNING:' | wc -l" $ubuntuDistro
+    if ($upgradeableCount -and [int]$upgradeableCount -gt 1) {
+        Write-Info "Found $([int]$upgradeableCount - 1) upgradeable packages"
+        Write-Info "Proceeding with package upgrades..."
+        if ($null -eq $sudoPassword) {
+            Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
+        } else {
+            Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro $sudoPassword
+        }
+    } else {
+        Write-Success "System packages are up to date"
+    }
+    
+    # Update Python packages
+    Write-Step "Python Package Updates"
+    
+    # Update pipx packages
+    $pipxList = Get-WSLCommandOutput "pipx list --short 2>/dev/null" $ubuntuDistro
+    if ($pipxList) {
+        Write-Info "Updating pipx packages..."
+        Invoke-WSLCommand "pipx upgrade-all" "Updating pipx packages" $ubuntuDistro
+    } else {
+        Write-Info "No pipx packages found to update"
+    }
+    
+    # Update Poetry if installed
+    $poetryVersion = Get-WSLCommandOutput "poetry --version 2>/dev/null || ~/.local/bin/poetry --version 2>/dev/null" $ubuntuDistro
+    if ($poetryVersion) {
+        Write-Info "Updating Poetry..."
+        Invoke-WSLCommand "pipx upgrade poetry" "Updating Poetry" $ubuntuDistro
+    }
+    
+    # Clear sudo password from memory
+    if ($sudoPassword) {
+        $sudoPassword.Dispose()
+        Write-Info "Cleared sudo credentials from memory"
+    }
+    
+    # Maintenance mode completion
+    Write-Step "Maintenance Complete" "Green"
+    Write-Success "✓ Linux/WSL package updates completed successfully"
+    Write-Info "Maintenance mode finished. All packages have been updated."
+    exit 0
+}
 
 # Step 1: WSL Setup
 Write-Step "WSL and Ubuntu Setup"
