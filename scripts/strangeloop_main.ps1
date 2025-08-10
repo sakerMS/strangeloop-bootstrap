@@ -1039,7 +1039,9 @@ try {
             $initCommand = "cd '$appDirResolved' && strangeloop init --loop $($selectedLoop.Name)"
             Write-Info "initCommand: $initCommand"
             Write-Info "Running: wsl -- bash -c \"$initCommand\""
-            wsl -- bash -c $initCommand
+            $loopResult = wsl -- bash -c $initCommand
+            Write-Host "WSL loop init output:" -ForegroundColor Yellow
+            if ($loopResult) { Write-Host $loopResult -ForegroundColor Gray }
         } else {
             Write-Info "Using existing StrangeLoop project directory"
         }
