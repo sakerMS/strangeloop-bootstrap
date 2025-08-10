@@ -301,17 +301,17 @@ if ($MaintenanceMode) {
     }
     
     $wslDistros = wsl -l -v 2>$null
-    $foundUbuntu = $false
+    $foundUbuntuLine = $false
     if ($wslDistros) {
         $wslDistros -split "`n" | ForEach-Object {
             $line = $_.Trim()
             if ($line -and $line -like "*$ubuntuDistro*") {
-                $foundUbuntu = $true
+                $foundUbuntuLine = $true
             }
         }
     }
     
-    if (-not $foundUbuntu) {
+    if (-not $foundUbuntuLine) {
         Write-Error "Ubuntu WSL distribution not found. Please run full setup first (without -MaintenanceMode)"
         exit 1
     }
@@ -409,7 +409,6 @@ $wslDistros = wsl -l -v 2>$null
 # Look for Ubuntu 24.04 distribution
 Write-Info "Checking for $ubuntuDistro distribution..."
 
-$foundUbuntu = $false
 if ($wslDistros) {
     $wslDistros -split "`n" | ForEach-Object {
         $line = $_.Trim()
@@ -419,7 +418,6 @@ if ($wslDistros) {
             
             # Check if this line contains our Ubuntu distribution
             if ($cleanLine -like "*$ubuntuDistro*") {
-                $foundUbuntu = $true
                 Write-Host "  Found: $cleanLine" -ForegroundColor Green
             }
         }

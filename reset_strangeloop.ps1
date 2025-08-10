@@ -243,18 +243,13 @@ if (-not $KeepWSL) {
         
         # Check if Ubuntu distribution exists
         $wslDistros = wsl -l -v 2>$null
-        $foundUbuntu = $false
-        
+        $ubuntuExists = $false
+
         if ($wslDistros) {
-            $wslDistros -split "`n" | ForEach-Object {
-                $line = $_.Trim()
-                if ($line -and $line -like "*$ubuntuDistro*") {
-                    $foundUbuntu = $true
-                }
-            }
+            $ubuntuExists = ($wslDistros -split "`n" | Where-Object { $_.Trim() -like "*$ubuntuDistro*" }).Count -gt 0
         }
         
-        if ($foundUbuntu) {
+        if ($ubuntuExists) {
             if (Get-UserConfirmation "Remove WSL Ubuntu-24.04 distribution? (This will delete all data in WSL)" "n") {
                 if ($WhatIf) {
                     Write-Info "Would unregister WSL Ubuntu-24.04 distribution"
