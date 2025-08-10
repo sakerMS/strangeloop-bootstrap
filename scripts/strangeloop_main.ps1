@@ -280,7 +280,7 @@ function Resolve-WSLPath {
     return $Path
 }
 
-# Open VS Code for a path (WSL or Windows) with graceful fallbacks
+# Open VS Code for a path (WSL or Windows) with simple, clear fallbacks
 function Open-VSCode {
     param(
         [string]$Path,
@@ -292,31 +292,47 @@ function Open-VSCode {
 
     if ($IsWSL) {
         $resolved = Resolve-WSLPath -Path $Path -Distribution $Distribution
-        # Prefer launching from inside WSL to attach correctly
+
+        # Check if VS Code CLI is available inside WSL
+        $codeExistsWSL = $false
         try {
-            $launchResult = wsl -d $Distribution -- bash -lc "command -v code >/dev/null 2>&1 && code -r \"$resolved\" || echo NO_CODE" 2>$null
-            if ($launchResult -and ($launchResult | Out-String) -match 'NO_CODE') {
-                throw 'code CLI not found in WSL'
-            }
-            Write-Info "Opened VS Code (WSL Remote) at: $resolved"
+            $rc = wsl -d $Distribution -- bash -lc 'command -v code >/dev/null 2>&1; echo $?' 2>$null
+            if ($rc -and ($rc.Trim() -eq '0')) { $codeExistsWSL = $true }
+        } catch { }
+
+        if ($codeExistsWSL) {
+            try {
+                # Launch from WSL so VS Code attaches to the remote correctly
+                $null = wsl -d $Distribution -- bash -lc "code -n \"$resolved\" >/dev/null 2>&1 & disown" 2>$null
+                Write-Info "Opening VS Code (WSL Remote) at: $resolved"
+                return
+            } catch { }
+        }
+
+        # Fallback: open the equivalent Windows UNC path with the Windows Code CLI
+        $windowsPath = "\\\\wsl.localhost\\$Distribution" + ($resolved -replace '/', '\\')
+        try {
+            Start-Process code -ArgumentList "-n", "$windowsPath" | Out-Null
+            Write-Info "Opening VS Code at Windows path: $windowsPath"
             return
-        } catch {
-            # Fallback: open via Windows UNC path
-            $windowsPath = "\\\\wsl.localhost\\$Distribution" + ($resolved -replace '/', '\\')
-            if (Get-Command code -ErrorAction SilentlyContinue) {
-                try { Start-Process code -ArgumentList "-r", "$windowsPath"; Write-Info "Opened VS Code at Windows path: $windowsPath"; return } catch { }
-            }
-            Write-Info "VS Code not found or could not be launched automatically. You can open:"
-            Write-Host "  • WSL: code '$resolved'" -ForegroundColor Yellow
-            Write-Host "  • Windows: $windowsPath" -ForegroundColor Yellow
-        }
-    } else {
-        if (Get-Command code -ErrorAction SilentlyContinue) {
-            try { Start-Process code -ArgumentList "-r", "$Path"; Write-Info "Opened VS Code at: $Path"; return } catch { }
-        }
-        Write-Info "VS Code not found or could not be launched automatically. From the project folder, run:"
-        Write-Host "  code ." -ForegroundColor Yellow
+        } catch { }
+
+        # Final guidance
+        Write-Info "Couldn't launch VS Code automatically. Open manually:"
+        Write-Host "  • From WSL:    code '$resolved'" -ForegroundColor Yellow
+        Write-Host "  • From Windows: $windowsPath" -ForegroundColor Yellow
+        return
     }
+
+    # Windows path
+    try {
+        Start-Process code -ArgumentList "-n", "$Path" | Out-Null
+        Write-Info "Opening VS Code at: $Path"
+        return
+    } catch { }
+
+    Write-Info "Couldn't launch VS Code automatically. From the project folder, run:"
+    Write-Host "  code ." -ForegroundColor Yellow
 }
 
 # Main Script

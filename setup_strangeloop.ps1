@@ -231,6 +231,20 @@ function Ensure-Directory {
     }
 }
 
+# Open VS Code at a target folder (simple CLI call with fallback hint)
+function Open-VSCode {
+    param([string]$TargetPath)
+
+    Write-Verbose "Attempting to open VS Code at $TargetPath"
+    try {
+        Start-Process -FilePath 'code' -ArgumentList @('-n', $TargetPath) -WindowStyle Normal -ErrorAction Stop | Out-Null
+        Write-Host "Launching Visual Studio Code at: $TargetPath" -ForegroundColor Cyan
+    } catch {
+        Write-Host "Couldn't launch VS Code automatically. Try manually:" -ForegroundColor Yellow
+        Write-Host "  code -n '$TargetPath'" -ForegroundColor Gray
+    }
+}
+
 # Prompt the user for Yes/No with default choice
 function Prompt-YesNo {
     param(
@@ -455,6 +469,7 @@ try {
     } else {
         Write-Host "⚠ Setup completed with exit code: $exitCode" -ForegroundColor Yellow
     }
+    # VS Code opening is handled by the main script to target the project directory
     
 } catch {
     Write-Host "`n=== Setup Failed ===" -ForegroundColor Red
