@@ -22,6 +22,36 @@ param(
     [switch]$WhatIf
 )
 
+# Prefixed logging for this script
+$script:LogPrefix = "[WINDOWS]"
+function Write-Host {
+    param(
+        [Parameter(Position=0, ValueFromRemainingArguments=$true)]
+        $Object,
+        [ConsoleColor]$ForegroundColor,
+        [ConsoleColor]$BackgroundColor,
+        [switch]$NoNewline,
+        [string]$Separator
+    )
+    $prefix = $script:LogPrefix
+    if ($null -ne $Separator -and $Object -is [System.Array]) {
+        $text = "$prefix " + ($Object -join $Separator)
+    } else {
+        $text = "$prefix $Object"
+    }
+    $splat = @{ Object = $text }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $splat['ForegroundColor'] = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $splat['BackgroundColor'] = $BackgroundColor }
+    if ($PSBoundParameters.ContainsKey('NoNewline'))      { $splat['NoNewline']      = $NoNewline }
+    Microsoft.PowerShell.Utility\Write-Host @splat
+}
+
+function Write-Verbose {
+    param([string]$Message)
+    $prefix = $script:LogPrefix
+    Microsoft.PowerShell.Utility\Write-Verbose -Message ("$prefix $Message")
+}
+
 # Error handling
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest

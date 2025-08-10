@@ -7,7 +7,7 @@
 #   -SkipDevelopmentTools : Skip development tools installation
 #   -MaintenanceMode      : Update packages only (for existing installations)
 #   -Verbose              : Enable detailed logging for troubleshooting
-#   -UseLocalScripts      : Use local scripts from ./scripts without downloading
+#   (Default) Prefetches all scripts to ./scripts (with overwrite prompt) and runs from local files
 #   -UserName            : Git username for configuration
 #   -UserEmail           : Git email for configuration
 #   -BaseUrl             : Custom base URL for script downloads
@@ -20,11 +20,41 @@ param(
     [switch]$MaintenanceMode,
     [switch]$Verbose,
     [switch]$WhatIf,
-    [switch]$UseLocalScripts,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
 )
+
+# Prefixed logging for this script
+$script:LogPrefix = "[LAUNCHER]"
+function Write-Host {
+    param(
+        [Parameter(Position=0, ValueFromRemainingArguments=$true)]
+        $Object,
+        [ConsoleColor]$ForegroundColor,
+        [ConsoleColor]$BackgroundColor,
+        [switch]$NoNewline,
+        [string]$Separator
+    )
+    $prefix = $script:LogPrefix
+    # Coerce object/array to string with separator if supplied
+    if ($null -ne $Separator -and $Object -is [System.Array]) {
+        $text = "$prefix " + ($Object -join $Separator)
+    } else {
+        $text = "$prefix $Object"
+    }
+    $splat = @{ Object = $text }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $splat['ForegroundColor'] = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $splat['BackgroundColor'] = $BackgroundColor }
+    if ($PSBoundParameters.ContainsKey('NoNewline'))      { $splat['NoNewline']      = $NoNewline }
+    Microsoft.PowerShell.Utility\Write-Host @splat
+}
+
+function Write-Verbose {
+    param([string]$Message)
+    $prefix = $script:LogPrefix
+    Microsoft.PowerShell.Utility\Write-Verbose -Message ("$prefix $Message")
+}
 
 # Error handling
 $ErrorActionPreference = "Stop"
@@ -38,9 +68,7 @@ if ($Verbose) {
 if ($WhatIf) {
     Write-Host "🔍 WHATIF MODE ENABLED - No operations will be executed" -ForegroundColor Yellow
 }
-if ($UseLocalScripts) {
-    Write-Host "📦 Using local scripts from the repository (no downloads)" -ForegroundColor Yellow
-}
+Write-Host "📦 Prefetch mode: will download all scripts to ./scripts and run from local files" -ForegroundColor Yellow
 
 # Function to download script content
 function Get-ScriptFromUrl {
@@ -110,8 +138,8 @@ function Invoke-ScriptContent {
     $paramPreview = $paramSplat.GetEnumerator() | ForEach-Object { "-$($_.Key)=$($_.Value)" }
     $previewStr = ($paramPreview -join ' ')
     Write-Verbose ("Executing script with parameters (splat): " + $previewStr)
-        # Execute the script (suppress pipeline output; rely on exit code)
-        $null = & $tempScriptPath @paramSplat
+    # Execute the script and allow its output to show in the console, but don't return its pipeline output
+    $null = & $tempScriptPath @paramSplat
         $executionSucceeded = $true
         
         # Safely derive an exit code (avoid StrictMode error when $LASTEXITCODE is unset)
@@ -122,6 +150,7 @@ function Invoke-ScriptContent {
         } catch {
             $code = 0
         }
+    Write-Verbose ("Child script exit code: " + $code)
     return $code
     } catch {
         Write-Host "✗ Error while executing downloaded script." -ForegroundColor Red
@@ -174,6 +203,77 @@ function Sanitize-DownloadedScript {
     return $sanitized
 }
 
+# Ensure a directory exists
+function Ensure-Directory {
+    param([string]$Path)
+    if (-not (Test-Path -Path $Path -PathType Container)) {
+        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        Write-Verbose "Created directory: $Path"
+    }
+}
+
+# Prompt the user for Yes/No with default choice
+function Prompt-YesNo {
+    param(
+        [string]$Message,
+        [bool]$DefaultYes = $true
+    )
+
+    $suffix = if ($DefaultYes) { 'Y/n' } else { 'y/N' }
+    $answer = Read-Host "$Message [$suffix]"
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultYes }
+    switch -Regex ($answer.Trim()) {
+        '^(y|yes)$' { return $true }
+        '^(n|no)$'  { return $false }
+        default     { return $DefaultYes }
+    }
+}
+
+# Download and save a script to a given path, with optional overwrite prompt
+function Save-ScriptToPath {
+    param(
+        [string]$Url,
+        [string]$Path,
+        [string]$Name,
+    [bool]$PromptOverwrite = $true,
+    [Nullable[bool]]$OverwriteChoice = $null
+    )
+
+    $dir = Split-Path -Path $Path -Parent
+    Ensure-Directory -Path $dir
+
+    $shouldWrite = $true
+    $exists = Test-Path -Path $Path -PathType Leaf
+    if ($exists) {
+        if ($OverwriteChoice -ne $null) {
+            $shouldWrite = [bool]$OverwriteChoice
+        } elseif ($PromptOverwrite) {
+            if ($WhatIf) {
+                Write-Host "WhatIf: Would overwrite existing $Name at $Path" -ForegroundColor Yellow
+            } else {
+                $shouldWrite = Prompt-YesNo -Message "File exists: $Path. Overwrite?" -DefaultYes:$true
+            }
+        }
+    }
+
+    if ($exists -and -not $shouldWrite) {
+        Write-Host "↷ Keeping existing $Name at $Path" -ForegroundColor Gray
+        return $Path
+    }
+
+    Write-Host "Preparing to save $Name to $Path" -ForegroundColor Yellow
+    if ($WhatIf) {
+        Write-Host "WhatIf: Would download $Name from $Url and save to $Path" -ForegroundColor Yellow
+        return $Path
+    }
+
+    $content = Get-ScriptFromUrl -Url $Url -ScriptName $Name
+    $content = Sanitize-DownloadedScript -Content $content -ScriptName $Name
+    Set-Content -Path $Path -Value $content -Encoding UTF8
+    Write-Host "✓ Saved $Name to $Path" -ForegroundColor Green
+    return $Path
+}
+
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Standalone Launcher         ║
@@ -211,28 +311,36 @@ if ($Verbose) {
     foreach ($script in $scriptUrls.GetEnumerator()) {
         Write-Verbose "- $($script.Key): $($script.Value)"
     }
-    if ($UseLocalScripts) {
-        Write-Verbose "Local script paths:"
-        foreach ($script in $localScripts.GetEnumerator()) {
-            Write-Verbose "- $($script.Key): $($script.Value)"
-        }
+    Write-Verbose "Local script paths:"
+    foreach ($script in $localScripts.GetEnumerator()) {
+        Write-Verbose "- $($script.Key): $($script.Value)"
     }
 }
 
 try {
-    # Get the main script content (local or remote)
-    if ($UseLocalScripts) {
-        Write-Host "=== Using Local Main Setup Script ===" -ForegroundColor Cyan
-        if (-not (Test-Path $localScripts.Main)) {
-            throw "Local main script not found at $($localScripts.Main)"
-        }
-        $mainScriptContent = Get-Content -Path $localScripts.Main -Raw -ErrorAction Stop
+    # Prefetch flow (default): download all scripts locally and then run from saved files
+    Write-Host "=== Prefetching All Setup Scripts Locally ===" -ForegroundColor Cyan
+    # Decide overwrite behavior once for all files
+    $globalOverwrite = $null
+    if ($WhatIf) {
+        Write-Host "WhatIf: Would prompt once to overwrite existing files (default Yes)" -ForegroundColor Yellow
+        $globalOverwrite = $true
     } else {
-        Write-Host "=== Downloading Main Setup Script ===" -ForegroundColor Cyan
-        $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "strangeloop_main.ps1"
-        # Work around known stray token corruption in remote content
-        $mainScriptContent = Sanitize-DownloadedScript -Content $mainScriptContent -ScriptName "strangeloop_main.ps1"
+        # Determine if any target files exist
+        $targetsExist = @($localScripts.Main, $localScripts.Linux, $localScripts.Windows) | ForEach-Object { Test-Path -Path $_ -PathType Leaf } | Where-Object { $_ } | Measure-Object | Select-Object -ExpandProperty Count
+        if ($targetsExist -gt 0) {
+            $globalOverwrite = Prompt-YesNo -Message "One or more files already exist in ./scripts. Overwrite all?" -DefaultYes:$true
+        } else {
+            $globalOverwrite = $true
+        }
     }
+
+    $savedMain    = Save-ScriptToPath -Url $scriptUrls.Main    -Path $localScripts.Main    -Name "strangeloop_main.ps1"    -PromptOverwrite:$false -OverwriteChoice:$globalOverwrite
+    $savedLinux   = Save-ScriptToPath -Url $scriptUrls.Linux   -Path $localScripts.Linux   -Name "strangeloop_linux.ps1"   -PromptOverwrite:$false -OverwriteChoice:$globalOverwrite
+    $savedWindows = Save-ScriptToPath -Url $scriptUrls.Windows -Path $localScripts.Windows -Name "strangeloop_windows.ps1" -PromptOverwrite:$false -OverwriteChoice:$globalOverwrite
+
+    # Load main content from the saved local file
+    $mainScriptContent = Get-Content -Path $savedMain -Raw -ErrorAction Stop
     
     # Prepare parameters for main script
     $mainParams = @{
@@ -243,11 +351,9 @@ try {
         WhatIf = $WhatIf
         UserName = $UserName
         UserEmail = $UserEmail
-        # Prefer local script paths when requested; otherwise pass URLs
-        LinuxScriptPath = $UseLocalScripts ? $localScripts.Linux : $null
-        WindowsScriptPath = $UseLocalScripts ? $localScripts.Windows : $null
-        LinuxScriptUrl = -not $UseLocalScripts ? $scriptUrls.Linux : $null
-        WindowsScriptUrl = -not $UseLocalScripts ? $scriptUrls.Windows : $null
+    # Always use saved local script paths
+    LinuxScriptPath = $localScripts.Linux
+    WindowsScriptPath = $localScripts.Windows
     }
     
     if ($Verbose) {
@@ -263,14 +369,10 @@ try {
         Write-Host "  • Prerequisites check (skipped: $SkipPrerequisites)" -ForegroundColor Gray
         Write-Host "  • Development tools setup (skipped: $SkipDevelopmentTools)" -ForegroundColor Gray
         Write-Host "  • Maintenance mode: $MaintenanceMode" -ForegroundColor Gray
-        Write-Host "  • Target scripts: strangeloop_main.ps1 (" -NoNewline -ForegroundColor Gray
-        if ($UseLocalScripts) { Write-Host "local" -NoNewline -ForegroundColor Gray } else { Write-Host "downloaded" -NoNewline -ForegroundColor Gray }
-        Write-Host ")" -ForegroundColor Gray
+        Write-Host "  • Target scripts: strangeloop_main.ps1 (local)" -ForegroundColor Gray
         if (-not $SkipDevelopmentTools) {
             Write-Host "  • Platform-specific setup (Linux/Windows)" -ForegroundColor Gray
-            if ($UseLocalScripts) {
-                Write-Host "    - Using local OS setup scripts from ./scripts" -ForegroundColor Gray
-            }
+            Write-Host "    - Using local OS setup scripts from ./scripts" -ForegroundColor Gray
         }
         Write-Host "`nNo actual operations performed in WhatIf mode." -ForegroundColor Yellow
         return 0

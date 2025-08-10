@@ -27,6 +27,35 @@ param(
     [string]$WindowsScriptUrl
 )
 
+# Prefixed logging for this script
+$script:LogPrefix = "[MAIN]"
+function Write-Host {
+    param(
+        [Parameter(Position=0, ValueFromRemainingArguments=$true)]
+        $Object,
+        [ConsoleColor]$ForegroundColor,
+        [ConsoleColor]$BackgroundColor,
+        [switch]$NoNewline,
+        [string]$Separator
+    )
+    $prefix = $script:LogPrefix
+    if ($null -ne $Separator -and $Object -is [System.Array]) {
+        $text = "$prefix " + ($Object -join $Separator)
+    } else {
+        $text = "$prefix $Object"
+    }
+    $splat = @{ Object = $text }
+    if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $splat['ForegroundColor'] = $ForegroundColor }
+    if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $splat['BackgroundColor'] = $BackgroundColor }
+    if ($PSBoundParameters.ContainsKey('NoNewline'))      { $splat['NoNewline']      = $NoNewline }
+    Microsoft.PowerShell.Utility\Write-Host @splat
+}
+
+function Write-Verbose {
+    param([string]$Message)
+    $prefix = $script:LogPrefix
+    Microsoft.PowerShell.Utility\Write-Verbose -Message ("$prefix $Message")
+}
 # Error handling
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -235,6 +264,59 @@ function Get-UserInput {
     } while ($Required -and [string]::IsNullOrWhiteSpace($userInput))
     
     return $userInput
+}
+
+# Resolve a WSL path placeholder like /home/$(whoami)/... to actual user
+function Resolve-WSLPath {
+    param([string]$Path, [string]$Distribution = "Ubuntu-24.04")
+    if ($Path -match '\$\(\s*whoami\s*\)') {
+        try {
+            $wslUser = wsl -d $Distribution -- bash -lc 'whoami' 2>$null
+            if ($wslUser) {
+                return ($Path -replace '\$\(\s*whoami\s*\)', $wslUser.Trim())
+            }
+        } catch { }
+    }
+    return $Path
+}
+
+# Open VS Code for a path (WSL or Windows) with graceful fallbacks
+function Open-VSCode {
+    param(
+        [string]$Path,
+        [bool]$IsWSL = $false,
+        [string]$Distribution = "Ubuntu-24.04"
+    )
+
+    if ($WhatIf) { Write-WhatIf "Open VS Code for path: $Path"; return }
+
+    if ($IsWSL) {
+        $resolved = Resolve-WSLPath -Path $Path -Distribution $Distribution
+        # Prefer launching from inside WSL to attach correctly
+        try {
+            $launchResult = wsl -d $Distribution -- bash -lc "command -v code >/dev/null 2>&1 && code -r \"$resolved\" || echo NO_CODE" 2>$null
+            if ($launchResult -and ($launchResult | Out-String) -match 'NO_CODE') {
+                throw 'code CLI not found in WSL'
+            }
+            Write-Info "Opened VS Code (WSL Remote) at: $resolved"
+            return
+        } catch {
+            # Fallback: open via Windows UNC path
+            $windowsPath = "\\\\wsl.localhost\\$Distribution" + ($resolved -replace '/', '\\')
+            if (Get-Command code -ErrorAction SilentlyContinue) {
+                try { Start-Process code -ArgumentList "-r", "$windowsPath"; Write-Info "Opened VS Code at Windows path: $windowsPath"; return } catch { }
+            }
+            Write-Info "VS Code not found or could not be launched automatically. You can open:"
+            Write-Host "  • WSL: code '$resolved'" -ForegroundColor Yellow
+            Write-Host "  • Windows: $windowsPath" -ForegroundColor Yellow
+        }
+    } else {
+        if (Get-Command code -ErrorAction SilentlyContinue) {
+            try { Start-Process code -ArgumentList "-r", "$Path"; Write-Info "Opened VS Code at: $Path"; return } catch { }
+        }
+        Write-Info "VS Code not found or could not be launched automatically. From the project folder, run:"
+        Write-Host "  code ." -ForegroundColor Yellow
+    }
 }
 
 # Main Script
@@ -907,7 +989,7 @@ try {
             Write-Info "Using existing StrangeLoop project directory"
         }
         
-        if ($LASTEXITCODE -eq 0 -or -not $shouldInitialize) {
+    if ($LASTEXITCODE -eq 0 -or -not $shouldInitialize) {
             if ($shouldInitialize) {
                 Write-Success "Loop initialized successfully in WSL!"
             } else {
@@ -929,6 +1011,9 @@ try {
             Write-Host "  WSL: cd '$appDir'" -ForegroundColor Yellow
             Write-Host "  Windows: \\wsl.localhost\Ubuntu-24.04$appDir" -ForegroundColor Yellow
             Write-Host "  VS Code: code '$appDir' (from WSL terminal)" -ForegroundColor Yellow
+
+            # Open VS Code for the initialized project in WSL
+            Open-VSCode -Path $appDir -IsWSL:$true -Distribution "Ubuntu-24.04"
         } else {
             Write-Error "Loop initialization failed in WSL"
             exit 1
@@ -985,7 +1070,7 @@ try {
             Write-Info "Using existing StrangeLoop project directory"
         }
         
-        if ($LASTEXITCODE -eq 0 -or -not $shouldInitialize) {
+    if ($LASTEXITCODE -eq 0 -or -not $shouldInitialize) {
             if ($shouldInitialize) {
                 Write-Success "Loop initialized successfully!"
             } else {
@@ -1009,6 +1094,9 @@ try {
             
             Write-Info "`nProject created at: $appDir"
             Write-Host "  Open in VS Code: code ." -ForegroundColor Yellow
+
+            # Open VS Code in Windows environment
+            Open-VSCode -Path $appDir -IsWSL:$false
         } else {
             Write-Error "Loop initialization failed"
             exit 1
