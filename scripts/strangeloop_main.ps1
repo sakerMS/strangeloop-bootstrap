@@ -1,11 +1,4 @@
-# StrangeLoop CLI Setup Script # Enable verbose output if Verbose is specified
-if ($Verbose) {
-    $VerbosePreference = "Continue"
-    Write-Host "🔍 VERBOSE MODE ENABLED in main orchestrator" -ForegroundColor Cyan
-}
-if ($WhatIf) {
-    Write-Host "🔍 WHATIF MODE ENABLED in main orchestrator - Preview mode" -ForegroundColor Yellow
-}n Entry Point
+# StrangeLoop CLI Setup Script - Main Entry Point
 # Automated setup following readme.md requirements
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
@@ -36,10 +29,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# Enable verbose output if Verbose is specified
+# Enable verbose/WhatIf banners after parameters are available
 if ($Verbose) {
     $VerbosePreference = "Continue"
-    Write-Host "� VERBOSE MODE ENABLED in main orchestrator" -ForegroundColor Cyan
+    Write-Host "🔍 VERBOSE MODE ENABLED in main orchestrator" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED in main orchestrator - Preview mode" -ForegroundColor Yellow
 }
 
 # Function to download script content

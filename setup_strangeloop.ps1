@@ -68,6 +68,7 @@ function Invoke-ScriptContent {
     Write-Verbose "Creating temporary script file for execution"
     # Create a temporary script file
     $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".ps1"
+    $executionSucceeded = $false
     
     try {
         Write-Verbose "Temp script path: $tempScriptPath"
@@ -89,12 +90,22 @@ function Invoke-ScriptContent {
         Write-Verbose "Executing script with parameters: $($paramArray -join ' ')"
         # Execute the script
         & $tempScriptPath @paramArray
+        $executionSucceeded = $true
         return $LASTEXITCODE
+    } catch {
+        Write-Host "✗ Error while executing downloaded script." -ForegroundColor Red
+        Write-Host "  Temp script path: $tempScriptPath" -ForegroundColor Yellow
+        Write-Host "  Details: $($_.Exception.Message)" -ForegroundColor Red
+        throw
     } finally {
-        # Clean up temp file
+        # Clean up temp file only on success to aid debugging
         if (Test-Path $tempScriptPath) {
-            Write-Verbose "Cleaning up temporary script file"
-            Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
+            if ($executionSucceeded) {
+                Write-Verbose "Cleaning up temporary script file"
+                Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
+            } else {
+                Write-Verbose "Preserving temporary script for debugging: $tempScriptPath"
+            }
         }
     }
 }
