@@ -69,22 +69,22 @@ function Invoke-ScriptContent {
         # Write script content to temp file
         Set-Content -Path $tempScriptPath -Value $ScriptContent -Encoding UTF8
         
-        # Build parameter array
-        $paramArray = @()
+        # Build parameter array for splatting
+        $paramSplat = @{}
         foreach ($key in $Parameters.Keys) {
             if ($Parameters[$key] -is [switch] -and $Parameters[$key]) {
-                $paramArray += "-$key"
+                $paramSplat[$key] = $true
                 Write-Verbose "Added switch parameter: -$key"
             } elseif ($Parameters[$key] -and $Parameters[$key] -ne $false) {
-                $paramArray += "-$key", "`"$($Parameters[$key])`""
-                Write-Verbose "Added parameter: -$key"
+                $paramSplat[$key] = $Parameters[$key]
+                Write-Verbose "Added parameter: -$key = '$($Parameters[$key])'"
             }
         }
         
-        Write-Verbose "Executing script with: $($paramArray -join ' ')"
+        Write-Verbose "Executing script with splatted parameters"
         # Execute the script
         try {
-            & $tempScriptPath @paramArray
+            & $tempScriptPath @paramSplat
             # If no exception was thrown, consider it successful
             return 0
         } catch {
