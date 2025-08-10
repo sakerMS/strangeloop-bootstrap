@@ -647,7 +647,7 @@ Write-Info "Configuring Git credential helper and merge tool..."
 Invoke-WSLCommand "git config --global credential.helper '/mnt/c/Program\\ Files/Git/mingw64/bin/git-credential-manager.exe'" "Setting credential helper" $ubuntuDistro
 Invoke-WSLCommand "git config --global credential.useHttpPath true" "Setting credential.useHttpPath" $ubuntuDistro
 Invoke-WSLCommand "git config --global merge.tool vscode" "Setting merge.tool vscode" $ubuntuDistro
-Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait $MERGED'" "Setting mergetool.vscode.cmd" $ubuntuDistro
+Invoke-WSLCommand 'git config --global mergetool.vscode.cmd "code --wait \$MERGED"' "Setting mergetool.vscode.cmd" $ubuntuDistro
 
 # Configure Git line endings for cross-platform compatibility in WSL
 Write-Info "Configuring Git line endings for cross-platform compatibility in WSL..."
