@@ -15,6 +15,7 @@
 
 param(
     [switch]$MaintenanceMode,
+    [switch]$Verbose,
     [string]$UserName,
     [string]$UserEmail
 )
@@ -22,6 +23,12 @@ param(
 # Error handling
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "� VERBOSE MODE ENABLED in Linux setup" -ForegroundColor Cyan
+}
 
 # Global variables for tracking display state
 $script:LastShownDistribution = ""

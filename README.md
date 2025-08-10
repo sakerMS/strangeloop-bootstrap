@@ -18,7 +18,36 @@ strangeloop-bootstrap/
 └── README.md                            # 📖 This file
 ```
 
-## 🎯 Component Overview
+## ⚙️ **Parameter Reference**
+
+### **Core Parameters**
+- **`-UserName`** - Git username for configuration (e.g., "John Doe")
+- **`-UserEmail`** - Git email for configuration (e.g., "john@company.com")
+- **`-BaseUrl`** - Custom repository URL for enterprise deployments
+
+### **Skip Parameters**
+- **`-SkipPrerequisites`** - Skip installation of system prerequisites
+  - Skips: Git, Azure CLI, Git LFS installation
+  - Use when: Tools are already installed via other means
+  - Example: `.\setup_strangeloop.ps1 -SkipPrerequisites`
+
+- **`-SkipDevelopmentTools`** - Skip installation of development environment
+  - Skips: Python, Poetry, pipx, Docker setup
+  - Use when: Development tools are already configured
+  - Example: `.\setup_strangeloop.ps1 -SkipDevelopmentTools`
+
+### **Mode Parameters**
+- **`-MaintenanceMode`** - Update packages only (no fresh installation)
+  - Updates: Python packages, WSL packages, Poetry dependencies
+  - Use when: Performing regular maintenance updates
+  - Example: `.\setup_strangeloop.ps1 -MaintenanceMode`
+
+- **`-Verbose`** - Enable detailed logging for troubleshooting
+  - Shows: Download progress, parameter passing, command execution
+  - Use when: Debugging issues or wanting detailed output
+  - Example: `.\setup_strangeloop.ps1 -Verbose`
+
+## 🎯 **Component Overview**
 
 ### Primary Script (User Entry Point)
 - **`setup_strangeloop.ps1`** - Standalone launcher that users download and run
@@ -85,14 +114,30 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 # With parameters
 .\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "you@domain.com"
 
+# Skip components if already installed
+.\setup_strangeloop.ps1 -SkipPrerequisites          # Skip Git, Azure CLI, Git LFS installation
+.\setup_strangeloop.ps1 -SkipDevelopmentTools       # Skip Python, Poetry, pipx, Docker setup
+
 # Maintenance mode (update packages only)
 .\setup_strangeloop.ps1 -MaintenanceMode
+
+# Enable verbose logging for troubleshooting
+.\setup_strangeloop.ps1 -Verbose
+
+# Combined options
+.\setup_strangeloop.ps1 -Verbose -MaintenanceMode -UserName "Your Name"
 
 # Skip components
 .\setup_strangeloop.ps1 -SkipPrerequisites -SkipDevelopmentTools
 
+# Combined skipping with other options
+.\setup_strangeloop.ps1 -SkipPrerequisites -UserName "Your Name" -Verbose
+
 # Maintenance mode with skipped prerequisites
 .\setup_strangeloop.ps1 -MaintenanceMode -SkipPrerequisites
+
+# Verbose mode for troubleshooting
+.\setup_strangeloop.ps1 -Verbose
 ```
 
 ### For Testing/Development

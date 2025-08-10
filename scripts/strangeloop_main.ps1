@@ -21,6 +21,7 @@ param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
     [switch]$MaintenanceMode,
+    [switch]$Verbose,
     [string]$UserName,
     [string]$UserEmail,
     [string]$LinuxScriptUrl,
@@ -31,20 +32,29 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "� VERBOSE MODE ENABLED in main orchestrator" -ForegroundColor Cyan
+}
+
 # Function to download script content
 function Get-ScriptFromUrl {
     param([string]$Url, [string]$ScriptName)
     
+    Write-Verbose "Downloading $ScriptName from $Url"
     Write-Host "Downloading $ScriptName..." -ForegroundColor Yellow
     try {
         $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
         if ($response.StatusCode -eq 200) {
+            Write-Verbose "Download successful, content length: $($response.Content.Length) characters"
             Write-Host "✓ $ScriptName downloaded successfully" -ForegroundColor Green
             return $response.Content
         } else {
             throw "HTTP $($response.StatusCode)"
         }
     } catch {
+        Write-Verbose "Download failed: $($_.Exception.Message)"
         Write-Host "✗ Failed to download $ScriptName from $Url" -ForegroundColor Red
         Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
         throw
@@ -55,6 +65,7 @@ function Get-ScriptFromUrl {
 function Invoke-ScriptContent {
     param([string]$ScriptContent, [hashtable]$Parameters = @{})
     
+    Write-Verbose "Creating temporary script for execution"
     # Create a temporary script file
     $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".ps1"
     
@@ -67,11 +78,14 @@ function Invoke-ScriptContent {
         foreach ($key in $Parameters.Keys) {
             if ($Parameters[$key] -is [switch] -and $Parameters[$key]) {
                 $paramArray += "-$key"
+                Write-Verbose "Added switch parameter: -$key"
             } elseif ($Parameters[$key] -and $Parameters[$key] -ne $false) {
                 $paramArray += "-$key", "`"$($Parameters[$key])`""
+                Write-Verbose "Added parameter: -$key"
             }
         }
         
+        Write-Verbose "Executing script with: $($paramArray -join ' ')"
         # Execute the script
         & $tempScriptPath @paramArray
         return $LASTEXITCODE
@@ -147,12 +161,16 @@ function Write-Info {
 
 function Test-Command {
     param([string]$Command)
+    Write-Verbose "Testing command availability: $Command"
     try {
         if (Get-Command $Command -ErrorAction SilentlyContinue) {
+            Write-Verbose "Command '$Command' found"
             return $true
         }
+        Write-Verbose "Command '$Command' not found"
         return $false
     } catch {
+        Write-Verbose "Error testing command '$Command': $($_.Exception.Message)"
         return $false
     }
 }
@@ -193,6 +211,7 @@ if ((Get-ExecutionPolicy) -eq 'Restricted') {
 
 # Maintenance Mode - Skip to OS-specific package updates only
 if ($MaintenanceMode) {
+    Write-Verbose "MaintenanceMode enabled - skipping to package updates"
     Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Maintenance Mode         ║
@@ -206,16 +225,20 @@ if ($MaintenanceMode) {
     # Jump directly to OS-specific setup
     # Determine platform quickly for maintenance
     Write-Step "Determining Platform for Package Updates"
+    Write-Verbose "Starting platform detection for maintenance mode"
     $needsLinux = $true  # Default to Linux/WSL for maintenance
     
     # Quick WSL check - if WSL is available and has distributions, prefer it
     if (Test-Command "wsl") {
+        Write-Verbose "WSL command found, checking for distributions"
         $wslDistros = wsl -l -v 2>$null
         if ($wslDistros -and ($wslDistros | Where-Object { $_ -match "Ubuntu" })) {
             $needsLinux = $true
+            Write-Verbose "Ubuntu WSL distribution found - selecting Linux path"
             Write-Info "Found WSL Ubuntu - will update Linux environment"
         } else {
             $needsLinux = $false
+            Write-Verbose "No Ubuntu WSL distribution found - selecting Windows path"
             Write-Info "No WSL Ubuntu found - will update Windows environment"
         }
     } else {
@@ -237,6 +260,14 @@ if ($MaintenanceMode) {
                 if ($UserName) { $linuxParams.UserName = $UserName }
                 if ($UserEmail) { $linuxParams.UserEmail = $UserEmail }
                 if ($MaintenanceMode) { $linuxParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $linuxParams.Verbose = $Verbose }
+                
+                if ($Verbose) {
+                    Write-Verbose "Parameters for Linux script (maintenance):"
+                    foreach ($param in $linuxParams.GetEnumerator()) {
+                        Write-Verbose "- $($param.Key): $($param.Value)"
+                    }
+                }
                 
                 $exitCode = Invoke-ScriptContent $linuxScriptContent $linuxParams
                 if ($exitCode -ne 0) {
@@ -261,6 +292,14 @@ if ($MaintenanceMode) {
                 
                 $windowsParams = @{}
                 if ($MaintenanceMode) { $windowsParams.MaintenanceMode = $MaintenanceMode }
+                if ($Verbose) { $windowsParams.Verbose = $Verbose }
+                
+                if ($Verbose) {
+                    Write-Verbose "Parameters for Windows script (maintenance):"
+                    foreach ($param in $windowsParams.GetEnumerator()) {
+                        Write-Verbose "- $($param.Key): $($param.Value)"
+                    }
+                }
                 
                 $exitCode = Invoke-ScriptContent $windowsScriptContent $windowsParams
                 if ($exitCode -ne 0) {

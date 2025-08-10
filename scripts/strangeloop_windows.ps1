@@ -14,12 +14,19 @@
 # Usage: .\Setup-StrangeLoop-Windows.ps1 [-MaintenanceMode]
 
 param(
-    [switch]$MaintenanceMode
+    [switch]$MaintenanceMode,
+    [switch]$Verbose
 )
 
 # Error handling
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "� VERBOSE MODE ENABLED in Windows setup" -ForegroundColor Cyan
+}
 
 # Helper function to execute commands with duration tracking
 function Invoke-CommandWithDuration {

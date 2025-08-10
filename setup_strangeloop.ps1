@@ -6,6 +6,7 @@
 #   -SkipPrerequisites    : Skip system prerequisite installation
 #   -SkipDevelopmentTools : Skip development tools installation
 #   -MaintenanceMode      : Update packages only (for existing installations)
+#   -Verbose              : Enable detailed logging for troubleshooting
 #   -UserName            : Git username for configuration
 #   -UserEmail           : Git email for configuration
 #   -BaseUrl             : Custom base URL for script downloads
@@ -16,6 +17,7 @@ param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
     [switch]$MaintenanceMode,
+    [switch]$Verbose,
     [string]$UserName,
     [string]$UserEmail,
     [string]$BaseUrl = "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main"
@@ -25,20 +27,30 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# Enable verbose output if Verbose is specified
+if ($Verbose) {
+    $VerbosePreference = "Continue"
+    Write-Host "� VERBOSE MODE ENABLED - Detailed logging activated" -ForegroundColor Cyan
+}
+
 # Function to download script content
 function Get-ScriptFromUrl {
     param([string]$Url, [string]$ScriptName)
     
+    Write-Verbose "Attempting to download $ScriptName from $Url"
     Write-Host "Downloading $ScriptName..." -ForegroundColor Yellow
     try {
+        Write-Verbose "Invoking web request..."
         $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
         if ($response.StatusCode -eq 200) {
+            Write-Verbose "Download successful, content length: $($response.Content.Length) characters"
             Write-Host "✓ $ScriptName downloaded successfully" -ForegroundColor Green
             return $response.Content
         } else {
             throw "HTTP $($response.StatusCode)"
         }
     } catch {
+        Write-Verbose "Download failed with error: $($_.Exception.Message)"
         Write-Host "✗ Failed to download $ScriptName from $Url" -ForegroundColor Red
         Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
         throw
@@ -49,10 +61,12 @@ function Get-ScriptFromUrl {
 function Invoke-ScriptContent {
     param([string]$ScriptContent, [hashtable]$Parameters = @{})
     
+    Write-Verbose "Creating temporary script file for execution"
     # Create a temporary script file
     $tempScriptPath = [System.IO.Path]::GetTempFileName() + ".ps1"
     
     try {
+        Write-Verbose "Temp script path: $tempScriptPath"
         # Write script content to temp file
         Set-Content -Path $tempScriptPath -Value $ScriptContent -Encoding UTF8
         
@@ -61,17 +75,21 @@ function Invoke-ScriptContent {
         foreach ($key in $Parameters.Keys) {
             if ($Parameters[$key] -is [switch] -and $Parameters[$key]) {
                 $paramArray += "-$key"
+                Write-Verbose "Added switch parameter: -$key"
             } elseif ($Parameters[$key] -and $Parameters[$key] -ne $false) {
                 $paramArray += "-$key", "`"$($Parameters[$key])`""
+                Write-Verbose "Added parameter: -$key `"$($Parameters[$key])`""
             }
         }
         
+        Write-Verbose "Executing script with parameters: $($paramArray -join ' ')"
         # Execute the script
         & $tempScriptPath @paramArray
         return $LASTEXITCODE
     } finally {
         # Clean up temp file
         if (Test-Path $tempScriptPath) {
+            Write-Verbose "Cleaning up temporary script file"
             Remove-Item $tempScriptPath -Force -ErrorAction SilentlyContinue
         }
     }
@@ -87,6 +105,14 @@ Write-Host @"
 Write-Host "`nThis launcher will download and execute the latest StrangeLoop setup scripts." -ForegroundColor Cyan
 Write-Host "Source: GitHub - strangeloop-bootstrap repository" -ForegroundColor Gray
 Write-Host "Base URL: $BaseUrl" -ForegroundColor Gray
+if ($Verbose) { 
+    Write-Verbose "Parameters received:"
+    Write-Verbose "- SkipPrerequisites: $SkipPrerequisites"
+    Write-Verbose "- SkipDevelopmentTools: $SkipDevelopmentTools"
+    Write-Verbose "- MaintenanceMode: $MaintenanceMode"
+    Write-Verbose "- UserName: $UserName"
+    Write-Verbose "- UserEmail: $UserEmail"
+}
 Write-Host ""
 
 # Define script URLs
@@ -94,6 +120,13 @@ $scriptUrls = @{
     "Main" = "$BaseUrl/scripts/strangeloop_main.ps1"
     "Linux" = "$BaseUrl/scripts/strangeloop_linux.ps1"
     "Windows" = "$BaseUrl/scripts/strangeloop_windows.ps1"
+}
+
+if ($Verbose) {
+    Write-Verbose "Script URLs configured:"
+    foreach ($script in $scriptUrls.GetEnumerator()) {
+        Write-Verbose "- $($script.Key): $($script.Value)"
+    }
 }
 
 try {
@@ -106,11 +139,19 @@ try {
         SkipPrerequisites = $SkipPrerequisites
         SkipDevelopmentTools = $SkipDevelopmentTools
         MaintenanceMode = $MaintenanceMode
+        Verbose = $Verbose
         UserName = $UserName
         UserEmail = $UserEmail
         # Pass script URLs to main script so it can download Linux/Windows scripts
         LinuxScriptUrl = $scriptUrls.Linux
         WindowsScriptUrl = $scriptUrls.Windows
+    }
+    
+    if ($Verbose) {
+        Write-Verbose "Parameters prepared for main script:"
+        foreach ($param in $mainParams.GetEnumerator()) {
+            Write-Verbose "- $($param.Key): $($param.Value)"
+        }
     }
     
     Write-Host "`n=== Executing Main Setup Script ===" -ForegroundColor Cyan

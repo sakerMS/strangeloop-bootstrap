@@ -24,30 +24,81 @@ The bootstrap script will:
 
 ## ⚙️ **Command Options**
 
+### **Basic Usage**
 ```powershell
 # Basic installation
 .\setup_strangeloop.ps1
 
+# With Git user configuration
+.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
+```
+
+### **Skip Options**
+```powershell
 # Skip prerequisites check (if tools already installed)
 .\setup_strangeloop.ps1 -SkipPrerequisites
 
 # Skip development tools installation
 .\setup_strangeloop.ps1 -SkipDevelopmentTools
 
+# Skip both (minimal setup)
+.\setup_strangeloop.ps1 -SkipPrerequisites -SkipDevelopmentTools
+```
+
+**When to use `-SkipPrerequisites`:**
+- ✅ Git is already installed and configured
+- ✅ Azure CLI is already installed
+- ✅ Git LFS is already available
+- ✅ Running on managed corporate environments
+- ✅ Prerequisites installed via different package managers
+
+**When to use `-SkipDevelopmentTools`:**
+- ✅ Python environment already configured
+- ✅ Poetry and pipx already installed
+- ✅ Docker already set up
+- ✅ WSL already configured for development
+- ✅ Custom development environment in place
+
+### **Maintenance Options**
+```powershell
 # Maintenance mode (update packages only)
 .\setup_strangeloop.ps1 -MaintenanceMode
+
+# Enable verbose logging for troubleshooting
+.\setup_strangeloop.ps1 -Verbose
+
+# Verbose mode with maintenance (detailed package updates)
+.\setup_strangeloop.ps1 -Verbose -MaintenanceMode
 
 # Set Git user configuration
 .\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
 
+### **Advanced Combinations**
+```powershell
 # Combine multiple options
 .\setup_strangeloop.ps1 -SkipPrerequisites -UserName "Your Name" -UserEmail "your.email@company.com"
 
 # Maintenance mode with custom user settings
 .\setup_strangeloop.ps1 -MaintenanceMode -UserName "Your Name" -UserEmail "your.email@company.com"
 
+# Verbose mode with skipped components
+.\setup_strangeloop.ps1 -Verbose -SkipPrerequisites -SkipDevelopmentTools
+
 # Use custom repository URL
 .\setup_strangeloop.ps1 -BaseUrl "https://raw.githubusercontent.com/your-fork/strangeloop-bootstrap/main"
+```
+
+### **Enterprise Scenarios**
+```powershell
+# Corporate environment with pre-installed tools
+.\setup_strangeloop.ps1 -SkipPrerequisites -UserName "John Doe" -UserEmail "john.doe@company.com"
+
+# CI/CD pipeline with existing Docker
+.\setup_strangeloop.ps1 -SkipDevelopmentTools -MaintenanceMode
+
+# Troubleshooting deployment issues
+.\setup_strangeloop.ps1 -Verbose -SkipPrerequisites
+```
 ```
 
 ## 🏗️ **Architecture**
@@ -125,6 +176,26 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 - Try from different network
 - Use manual installation method
 - Scripts fall back to local versions automatically
+
+**Skip Parameters Troubleshooting**
+
+Use `-SkipPrerequisites` when you encounter:
+- ❌ "Git is already installed" conflicts
+- ❌ "Azure CLI installation failed" in corporate environments  
+- ❌ Package manager conflicts with existing tools
+- ❌ Corporate policies prevent software installation
+
+Use `-SkipDevelopmentTools` when you encounter:
+- ❌ "Python version conflicts" with existing installations
+- ❌ "Docker Desktop already running" messages
+- ❌ "Poetry already configured" warnings
+- ❌ WSL distribution conflicts with existing setup
+
+Combine both parameters (`-SkipPrerequisites -SkipDevelopmentTools`) when:
+- ✅ Running in pre-configured development environments
+- ✅ Using company-managed tool installations
+- ✅ Performing StrangeLoop CLI installation only
+- ✅ Working with custom development stacks
 
 **Permission Issues**
 ```powershell
