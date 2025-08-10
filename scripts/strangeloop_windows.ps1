@@ -169,6 +169,7 @@ function Get-UserInput {
 # Main Script
 if ($MaintenanceMode) {
     Write-Host @"
+
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Windows Maintenance         ║
 ║                     Package Updates Only                      ║
@@ -176,6 +177,7 @@ if ($MaintenanceMode) {
 "@ -ForegroundColor $Colors.Success
 } else {
     Write-Host @"
+
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Windows Dependencies        ║
 ║                     Development Environment                   ║

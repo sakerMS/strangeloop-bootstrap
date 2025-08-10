@@ -269,14 +269,27 @@ function Get-UserInput {
 # Resolve a WSL path placeholder like /home/$(whoami)/... to actual user
 function Resolve-WSLPath {
     param([string]$Path, [string]$Distribution = "Ubuntu-24.04")
-    if ($Path -match '\$\(\s*whoami\s*\)') {
-        try {
-            $wslUser = wsl -d $Distribution -- bash -lc 'whoami' 2>$null
-            if ($wslUser) {
-                return ($Path -replace '\$\(\s*whoami\s*\)', $wslUser.Trim())
-            }
-        } catch { }
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+
+    # Try to detect the WSL username from the specified distribution first
+    $wslUser = $null
+    try {
+        $wslUser = (wsl -d $Distribution -- bash -lc 'whoami' 2>$null)
+    } catch { }
+    if (-not $wslUser) {
+        try { $wslUser = (wsl -- bash -lc 'whoami' 2>$null) } catch { }
     }
+    if ($wslUser) { $wslUser = $wslUser.Trim() }
+
+    # Replace both $(whoami) and $whoami placeholders when we know the user
+    if ($wslUser) {
+        # In a regex replacement string, $ has special meaning; escape it by doubling
+        $safeUser = $wslUser -replace '\$', '$$'
+        $Path = $Path -replace '\$\(\s*whoami\s*\)', $safeUser
+        $Path = $Path -replace '\$whoami(?![A-Za-z0-9_])', $safeUser
+    }
+
     return $Path
 }
 
@@ -337,6 +350,7 @@ function Open-VSCode {
 
 # Main Script
 Write-Host @"
+
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Main Entry               ║
 ║                     Automated Installation                    ║
@@ -352,6 +366,7 @@ if ((Get-ExecutionPolicy) -eq 'Restricted') {
 if ($MaintenanceMode) {
     Write-Verbose "MaintenanceMode enabled - skipping to package updates"
     Write-Host @"
+
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Maintenance Mode         ║
 ║                    Package Updates Only                       ║
@@ -948,23 +963,36 @@ try {
     
     if ($needsLinux) {
         # WSL development - use Linux file system
-        $defaultAppDir = "/home/`$(whoami)/projects/$appName"
+        $wslDistro = "Ubuntu-24.04"
+        # Detect WSL user once to avoid placeholder issues
+        $detectedWslUser = $null
+        try {
+            $detectedWslUser = (wsl -d $wslDistro -- bash -lc 'whoami' 2>$null)
+            if ($detectedWslUser) { $detectedWslUser = $detectedWslUser.Trim() }
+        } catch { }
+        if (-not $detectedWslUser) {
+            try { $detectedWslUser = (wsl -- bash -lc 'whoami' 2>$null).Trim() } catch { }
+        }
+
+        $defaultAppDir = if ($detectedWslUser) { "/home/$detectedWslUser/projects/$appName" } else { "/home/`$(whoami)/projects/$appName" }
         Write-Info "Using WSL environment for project initialization"
         $appDir = Get-UserInput "Application directory (WSL path)" $defaultAppDir
+        # Resolve any placeholders in the provided path
+        $appDirResolved = Resolve-WSLPath -Path $appDir -Distribution $wslDistro
         
         # Create directory in WSL and check for existing projects
-        Write-Info "Creating application directory in WSL: $appDir"
+    Write-Info "Creating application directory in WSL: $appDirResolved"
         
         # Check if directory already exists and handle accordingly
-        $dirCheckCommand = "if [ -d '$appDir' ]; then echo 'EXISTS'; else echo 'NOT_EXISTS'; fi"
-        $dirExists = wsl -- bash -c $dirCheckCommand
+    $dirCheckCommand = "if [ -d '$appDirResolved' ]; then echo 'EXISTS'; else echo 'NOT_EXISTS'; fi"
+    $dirExists = wsl -- bash -c $dirCheckCommand
         
         $shouldInitialize = $true
         if ($dirExists -eq "EXISTS") {
             Write-Warning "Directory '$appDir' already exists"
             
             # Check if it's already a StrangeLoop project
-            $isStrangeLoopCommand = "cd '$appDir' && if [ -d './strangeloop' ]; then echo 'YES'; else echo 'NO'; fi"
+            $isStrangeLoopCommand = "cd '$appDirResolved' && if [ -d './strangeloop' ]; then echo 'YES'; else echo 'NO'; fi"
             $isStrangeLoopProject = wsl -- bash -c $isStrangeLoopCommand
             
             if ($isStrangeLoopProject -eq "YES") {
@@ -975,12 +1003,12 @@ try {
                     $shouldInitialize = $false
                 } else {
                     Write-Info "Cleaning existing project and reinitializing..."
-                    $cleanCommand = "cd '$appDir' && rm -rf ./* ./.*[^.] 2>/dev/null || true"
+                    $cleanCommand = "cd '$appDirResolved' && rm -rf ./* ./.*[^.] 2>/dev/null || true"
                     wsl -- bash -c $cleanCommand
                 }
             } else {
                 # Directory exists but not a StrangeLoop project
-                $hasFilesCommand = "cd '$appDir' && find . -maxdepth 1 -type f | wc -l"
+                $hasFilesCommand = "cd '$appDirResolved' && find . -maxdepth 1 -type f | wc -l"
                 $hasFiles = wsl -- bash -c $hasFilesCommand
                 if ($hasFiles -and [int]$hasFiles -gt 0) {
                     Write-Warning "Directory contains $hasFiles files"
@@ -993,13 +1021,13 @@ try {
             }
         } else {
             # Create directory
-            wsl -- bash -c "mkdir -p '$appDir'"
+            wsl -- bash -c "mkdir -p '$appDirResolved'"
         }
         
         # Initialize project in WSL (only if needed)
         if ($shouldInitialize) {
             Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
-            $initCommand = "cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)"
+            $initCommand = "cd '$appDirResolved' && strangeloop init --loop $($selectedLoop.Name)"
             wsl -- bash -c $initCommand
         } else {
             Write-Info "Using existing StrangeLoop project directory"
@@ -1014,22 +1042,22 @@ try {
             
             # Update settings.yaml with project name
             Write-Info "Updating project settings..."
-            $updateCommand = "cd '$appDir' && if [ -f './strangeloop/settings.yaml' ]; then sed -i 's/^name:.*/name: $appName/' './strangeloop/settings.yaml'; fi"
+            $updateCommand = "cd '$appDirResolved' && if [ -f './strangeloop/settings.yaml' ]; then sed -i 's/^name:.*/name: $appName/' './strangeloop/settings.yaml'; fi"
             wsl -- bash -c $updateCommand
             
             # Run strangeloop recurse to apply configuration changes
             Write-Info "Applying configuration changes..."
-            $recurseCommand = "cd '$appDir' && strangeloop recurse"
+            $recurseCommand = "cd '$appDirResolved' && strangeloop recurse"
             wsl -- bash -c $recurseCommand
             
             # Provide access instructions
             Write-Info "`nTo access your project:"
-            Write-Host "  WSL: cd '$appDir'" -ForegroundColor Yellow
-            Write-Host "  Windows: \\wsl.localhost\Ubuntu-24.04$appDir" -ForegroundColor Yellow
-            Write-Host "  VS Code: code '$appDir' (from WSL terminal)" -ForegroundColor Yellow
+            Write-Host "  WSL: cd '$appDirResolved'" -ForegroundColor Yellow
+            Write-Host "  Windows: \\wsl.localhost\$wslDistro$appDirResolved" -ForegroundColor Yellow
+            Write-Host "  VS Code: code '$appDirResolved' (from WSL terminal)" -ForegroundColor Yellow
 
             # Open VS Code for the initialized project in WSL
-            Open-VSCode -Path $appDir -IsWSL:$true -Distribution "Ubuntu-24.04"
+            Open-VSCode -Path $appDirResolved -IsWSL:$true -Distribution $wslDistro
         } else {
             Write-Error "Loop initialization failed in WSL"
             exit 1
