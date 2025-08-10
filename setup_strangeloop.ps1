@@ -75,23 +75,48 @@ function Invoke-ScriptContent {
         # Write script content to temp file
         Set-Content -Path $tempScriptPath -Value $ScriptContent -Encoding UTF8
         
-        # Build parameter array
+        # Build parameter array (handle switches and values safely)
         $paramArray = @()
         foreach ($key in $Parameters.Keys) {
-            if ($Parameters[$key] -is [switch] -and $Parameters[$key]) {
-                $paramArray += "-$key"
-                Write-Verbose "Added switch parameter: -$key"
-            } elseif ($Parameters[$key] -and $Parameters[$key] -ne $false) {
-                $paramArray += "-$key", "`"$($Parameters[$key])`""
-                Write-Verbose "Added parameter: -$key `"$($Parameters[$key])`""
+            $value = $Parameters[$key]
+
+            # Normalize SwitchParameter/boolean handling
+            if ($null -ne $value -and ($value -is [System.Management.Automation.SwitchParameter] -or $value -is [bool])) {
+                if ([bool]$value) {
+                    $paramArray += "-$key"
+                    Write-Verbose "Added switch parameter: -$key"
+                } else {
+                    # Do not pass switches with $false
+                    Write-Verbose "Omitted switch parameter (false): -$key"
+                }
+                continue
             }
+
+            # Skip null/empty values
+            if ($null -eq $value -or ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) {
+                Write-Verbose "Omitted parameter (null/empty): -$key"
+                continue
+            }
+
+            # Add normal key-value parameter without manual quoting
+            $paramArray += "-$key", $value
+            Write-Verbose "Added parameter: -$key = '$value'"
         }
         
-        Write-Verbose "Executing script with parameters: $($paramArray -join ' ')"
+    Write-Verbose "Executing script with parameters: $($paramArray -join ' ')"
         # Execute the script
         & $tempScriptPath @paramArray
         $executionSucceeded = $true
-        return $LASTEXITCODE
+        
+        # Safely derive an exit code (avoid StrictMode error when $LASTEXITCODE is unset)
+        $code = 0
+        try {
+            $code = (Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction Stop)
+            if ($null -eq $code -or ($code -isnot [int])) { $code = 0 }
+        } catch {
+            $code = 0
+        }
+        return $code
     } catch {
         Write-Host "✗ Error while executing downloaded script." -ForegroundColor Red
         Write-Host "  Temp script path: $tempScriptPath" -ForegroundColor Yellow
