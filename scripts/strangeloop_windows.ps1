@@ -1,24 +1,20 @@
-# StrangeLoop CLI Setup S# Enable verbose output if Verbose is specified
-if ($Verbose) {
-    $VerbosePreference = "Continue"
-    Write-Host "🔍 VERBOSE MODE ENABLED in Windows setup" -ForegroundColor Cyan
-}
-if ($WhatIf) {
-    Write-Host "🔍 WHATIF MODE ENABLED in Windows setup - Preview mode" -ForegroundColor Yellow
-} - Windows Dependencies
-# Handles Windows-specific development environment setup
-# 
-# Author: [Sakr Omera/Bing Ads Teams Egypt]
-# Version: 1.0
-# Created: August 2025
-# 
-# This script manages Windows-specific Python environment, Poetry, pipx,
-# Git configuration, and Docker setup for Windows development.
-#
-# Prerequisites: Windows 10/11 with PowerShell 5.1+
-# Execution Policy: RemoteSigned or Unrestricted required
-#
-# Usage: .\strangeloop_windows.ps1 [-MaintenanceMode] [-Verbose] [-WhatIf]
+<#
+StrangeLoop CLI Setup - Windows Dependencies
+
+Handles Windows-specific development environment setup
+
+Author: [Sakr Omera/Bing Ads Teams Egypt]
+Version: 1.0
+Created: August 2025
+
+This script manages Windows-specific Python environment, Poetry, pipx,
+Git configuration, and Docker setup for Windows development.
+
+Prerequisites: Windows 10/11 with PowerShell 5.1+
+Execution Policy: RemoteSigned or Unrestricted required
+
+Usage: .\strangeloop_windows.ps1 [-MaintenanceMode] [-Verbose] [-WhatIf]
+#>
 
 param(
     [switch]$MaintenanceMode,
@@ -30,10 +26,13 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# Enable verbose output if Verbose is specified
+# Enable verbose/WhatIf banners after parameters are available
 if ($Verbose) {
     $VerbosePreference = "Continue"
-    Write-Host "� VERBOSE MODE ENABLED in Windows setup" -ForegroundColor Cyan
+    Write-Host "🔍 VERBOSE MODE ENABLED in Windows setup" -ForegroundColor Cyan
+}
+if ($WhatIf) {
+    Write-Host "🔍 WHATIF MODE ENABLED in Windows setup - Preview mode" -ForegroundColor Yellow
 }
 
 # Helper function to execute commands with duration tracking

@@ -110,6 +110,39 @@ function Invoke-ScriptContent {
     }
 }
 
+# Sanitize downloaded script content to work around known corruption artifacts
+function Sanitize-DownloadedScript {
+    param(
+        [string]$Content,
+        [string]$ScriptName
+    )
+
+    $original = $Content
+    # Normalize newlines to LF to reduce CR/LF mishaps, then back to CRLF for PowerShell readability
+    $normalized = ($Content -replace "\r\n", "\n")
+
+    # Remove/replace specific corrupt tokens observed in remote scripts
+    # Example: a stray "}n Entry Point" token injected after a closing brace
+    $normalized = $normalized -replace "}\s*n Entry Point", "}\n# Main Entry Point"
+    # Also handle a standalone line starting with just "n Entry Point"
+    $normalized = ($normalized -split "\n") | ForEach-Object {
+        if ($_ -match '^\s*n Entry Point\s*$') { '# Main Entry Point' } else { $_ }
+    } | Out-String
+
+    # Restore CRLF for temp-file execution
+    $sanitized = ($normalized -replace "\n", "`r`n")
+
+    if ($Verbose) {
+        if ($sanitized -ne $original) {
+            Write-Verbose "Applied content sanitization to $ScriptName (fixed known artifacts)"
+        } else {
+            Write-Verbose "No sanitization changes needed for $ScriptName"
+        }
+    }
+
+    return $sanitized
+}
+
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
 ║           StrangeLoop CLI Setup - Standalone Launcher         ║
@@ -148,6 +181,8 @@ try {
     # Download the main script
     Write-Host "=== Downloading Main Setup Script ===" -ForegroundColor Cyan
     $mainScriptContent = Get-ScriptFromUrl $scriptUrls.Main "strangeloop_main.ps1"
+    # Work around known stray token corruption in remote content
+    $mainScriptContent = Sanitize-DownloadedScript -Content $mainScriptContent -ScriptName "strangeloop_main.ps1"
     
     # Prepare parameters for main script
     $mainParams = @{
