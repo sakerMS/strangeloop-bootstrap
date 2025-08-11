@@ -9,11 +9,26 @@
 # prerequisite checks and package updates for maximum simplicity.
 #
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
-# Execution Policy: RemoteSigned or Unrestricted required
+# Execution Policy: Automatically handled
 #
 # Usage: .\setup_strangeloop.ps1
 
 param()
+
+# Check and handle execution policy first (before any other operations)
+$currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+if ($currentPolicy -eq "Restricted") {
+    Write-Host "Execution policy is Restricted. Setting to RemoteSigned for script execution..." -ForegroundColor Yellow
+    try {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        Write-Host "✓ Execution policy updated to RemoteSigned" -ForegroundColor Green
+    } catch {
+        Write-Host "✗ Failed to set execution policy. Please run the following command manually:" -ForegroundColor Red
+        Write-Host "Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force" -ForegroundColor Yellow
+        Write-Host "Then run this script again." -ForegroundColor Yellow
+        exit 1
+    }
+}
 
 # Error handling
 $ErrorActionPreference = "Stop"
@@ -34,6 +49,37 @@ Write-Host "This script will install and configure StrangeLoop CLI with environm
 Write-Host " " -ForegroundColor White
 
 #region Helper Functions
+
+# Global variables for tracking display state
+$script:LastShownDistribution = ""
+
+# Helper function to execute commands with duration tracking
+function Invoke-CommandWithDuration {
+    param(
+        [string]$Command,
+        [string]$Description,
+        [scriptblock]$ScriptBlock
+    )
+    
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    $startTime = Get-Date
+    
+    try {
+        if ($ScriptBlock) {
+            $result = & $ScriptBlock
+        } else {
+            $result = Invoke-Expression $Command
+        }
+        
+        $duration = (Get-Date).Subtract($startTime).TotalSeconds.ToString('F1')
+        Write-Host "  ✓ Complete! Duration: ${duration}s" -ForegroundColor Green
+        return $result
+    } catch {
+        $duration = (Get-Date).Subtract($startTime).TotalSeconds.ToString('F1')
+        Write-Host "  ✗ Failed! Duration: ${duration}s" -ForegroundColor Red
+        throw
+    }
+}
 
 function Write-Step {
     param(
@@ -133,13 +179,13 @@ function Open-VSCode {
             if ($Distribution) {
                 Write-Info "Launching VS Code from within WSL ($Distribution)"
                 # Use absolute path and ensure we change to the directory first
-                $wslCommand = "cd '$Path' && pwd && code ."
+                $wslCommand = "cd '$Path' `&`& pwd `&`& code ."
                 $result = wsl -d $Distribution -- bash -c $wslCommand
                 Write-Info "WSL command result: $result"
             } else {
                 Write-Info "Launching VS Code from within default WSL"
                 # Use absolute path and ensure we change to the directory first
-                $wslCommand = "cd '$Path' && pwd && code ."
+                $wslCommand = "cd '$Path' `&`& pwd `&`& code ."
                 $result = wsl -- bash -c $wslCommand
                 Write-Info "WSL command result: $result"
             }
@@ -154,10 +200,116 @@ function Open-VSCode {
         Write-Info "You can manually open VS Code and navigate to: $Path"
         if ($IsWSL) {
             if ($Distribution) {
-                Write-Info "Manual command: wsl -d $Distribution -- bash -c `"cd '$Path' && code .`""
+                Write-Info "Manual command: wsl -d $Distribution -- bash -c `"cd '$Path' `&`& code .`""
             } else {
-                Write-Info "Manual command: wsl -- bash -c `"cd '$Path' && code .`""
+                Write-Info "Manual command: wsl -- bash -c `"cd '$Path' `&`& code .`""
             }
+        }
+    }
+}
+
+function Invoke-WSLCommand {
+    param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
+    try {
+        # Use specified distribution or default Ubuntu
+        $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
+        $targetDisplay = if ($Distribution) { $Distribution } else { 'Default WSL' }
+        
+        Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+        
+        # Only show target distribution if it's different from the last shown one
+        if ($script:LastShownDistribution -ne $targetDisplay) {
+            Write-Host "  Target: $targetDisplay" -ForegroundColor Gray
+            $script:LastShownDistribution = $targetDisplay
+        }
+        
+        # Track start time for duration calculation
+        $startTime = Get-Date
+        
+        # Handle sudo commands with password if provided
+        if ($SudoPassword -and $Command.StartsWith("sudo ")) {
+            # Convert SecureString to plain text for command execution
+            $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+            # Replace sudo with echo password | sudo -S
+            $sudoCommand = $Command -replace "^sudo ", ""
+            $commandWithPassword = "echo '$plaintextPassword' | sudo -S $sudoCommand"
+            $wslCommand = "wsl $distroParam -- bash -c `"$commandWithPassword`""
+        } else {
+            $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
+        }
+        
+        $result = Invoke-Expression $wslCommand 2>&1
+        
+        # For StrangeLoop commands, check if output contains success indicators rather than relying solely on exit code
+        $isStrangeLoopCommand = $Command -match "strangeloop"
+        $hasSuccessOutput = $result -and ($result -join "`n") -match "(initialized|generated|merged|up to date)"
+        
+        if ($LASTEXITCODE -eq 0 -or ($isStrangeLoopCommand -and $hasSuccessOutput)) {
+            Write-Host "  ✓ Complete! Duration: $((Get-Date).Subtract($startTime).TotalSeconds.ToString('F1'))s" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "`n  ⚠ Failed (Exit code: $LASTEXITCODE)" -ForegroundColor Red
+            if ($result) {
+                $errorLines = $result | Where-Object { $_ -and $_.ToString().Trim() }
+                if ($errorLines) {
+                    Write-Host "  Error: $($errorLines[0])" -ForegroundColor Red
+                }
+            }
+            Write-Host "  Manual command: wsl $distroParam -- $Command" -ForegroundColor Yellow
+            return $false
+        }
+    } catch {
+        Write-Host "`n  ✗ Exception occurred" -ForegroundColor Red
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    }
+}
+
+function Get-WSLCommandOutput {
+    param([string]$Command, [string]$Distribution = "")
+    try {
+        $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
+        $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
+        $result = Invoke-Expression $wslCommand 2>&1
+        
+        if ($LASTEXITCODE -eq 0) {
+            return ($result | Where-Object { $_ -and $_.ToString().Trim() }) -join "`n"
+        } else {
+            return $null
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Get-SudoPassword {
+    param([string]$Distribution)
+    
+    Write-Info "Checking sudo access for WSL operations..."
+    
+    # First check if sudo is passwordless
+    $sudoCheck = Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $Distribution
+    
+    if ($sudoCheck -eq "NOPASSWD") {
+        Write-Success "Passwordless sudo is configured"
+        return $null
+    } else {
+        Write-Info "Sudo password is required for package management operations."
+        Write-Host "Please enter your WSL sudo password (input will be hidden):" -ForegroundColor Yellow
+        
+        # Securely read password
+        $securePassword = Read-Host -AsSecureString
+        $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
+        
+        # Test the password
+        $testResult = Get-WSLCommandOutput "echo '$plaintextPassword' | sudo -S true 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'" $Distribution
+        
+        if ($testResult -eq "SUCCESS") {
+            Write-Success "Sudo password verified"
+            return $securePassword
+        } else {
+            Write-Error "Invalid sudo password. Please check your password and try again."
+            return $null
         }
     }
 }
@@ -190,14 +342,17 @@ function Get-ScriptFromUrl {
 Write-Step "Checking Prerequisites"
 
 # Check PowerShell version
-$psVersion = $PSVersionTable.PSVersion
-if ($psVersion.Major -lt 5 -or ($psVersion.Major -eq 5 -and $psVersion.Minor -lt 1)) {
-    Write-Error "PowerShell 5.1 or higher is required. Current version: $($psVersion.ToString())"
-    exit 1
+Invoke-CommandWithDuration -Description "Checking PowerShell version" -ScriptBlock {
+    $psVersion = $PSVersionTable.PSVersion
+    if ($psVersion.Major -lt 5 -or ($psVersion.Major -eq 5 -and $psVersion.Minor -lt 1)) {
+        Write-Error "PowerShell 5.1 or higher is required. Current version: $($psVersion.ToString())"
+        exit 1
+    }
+    Write-Success "PowerShell version: $($psVersion.ToString())"
 }
-Write-Success "PowerShell version: $($psVersion.ToString())"
     
-    # Check execution policy
+# Check execution policy
+Invoke-CommandWithDuration -Description "Checking execution policy" -ScriptBlock {
     $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
     $allowedPolicies = @("RemoteSigned", "Unrestricted", "Bypass")
     if ($currentPolicy -notin $allowedPolicies) {
@@ -213,6 +368,7 @@ Write-Success "PowerShell version: $($psVersion.ToString())"
     } else {
         Write-Success "Execution policy '$currentPolicy' is suitable for development"
     }
+}
     
 # Check basic tools
 $requiredTools = @("git", "curl")
@@ -228,7 +384,7 @@ foreach ($tool in $requiredTools) {
 
 #region StrangeLoop Installation
 
-Write-Step "Azure Authentication & StrangeLoop Installation"
+Write-Step "Azure Authentication and StrangeLoop Installation"
 
 # Check if StrangeLoop is already installed
 if (Test-Command "strangeloop") {
@@ -254,7 +410,9 @@ if (Test-Command "strangeloop") {
         Remove-Item "strangeloop.msi" -Force -ErrorAction SilentlyContinue
         
         # Refresh PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+        $env:Path = $machinePath + ";" + $userPath
         
         if (Test-Command "strangeloop") {
             Write-Success "StrangeLoop installed successfully"
@@ -307,7 +465,7 @@ Write-Step "Loop Discovery and Selection"
             $availableLoops = @()
             $loopsOutput -split "`n" | ForEach-Object {
                 $line = $_.Trim()
-                if ($line -match "^([a-zA-Z0-9-]+)\s+(.+)$") {
+                if ($line -match "^([a-zA-Z0-9\-]+)\s+(.+)$") {
                     $availableLoops += @{
                         Name = $matches[1]
                         Description = $matches[2]
@@ -367,15 +525,221 @@ Write-Step "Loop Discovery and Selection"
     $needsLinux = $linuxRequiredLoops -contains $selectedLoop.Name
     $isWindowsOnly = $windowsCompatibleLoops -contains $selectedLoop.Name
     
-    # Check WSL availability only when needed
+    # Check and setup WSL environment when needed
     $wslAvailable = $false
+    $ubuntuDistro = "Ubuntu-24.04"
+    
     if ($needsLinux -or (-not $isWindowsOnly)) {
-        Write-Step "Checking WSL Availability"
-        $wslAvailable = Test-WSL
-        if ($wslAvailable) {
-            Write-Success "WSL is available for Linux development environments"
+        Write-Step "WSL Setup and Availability Check"
+        
+        # Check if WSL is installed
+        if (-not (Test-Command "wsl")) {
+            if ($needsLinux) {
+                Write-Info "WSL is required but not installed. Installing WSL..."
+                Write-Warning "This requires administrator privileges and may require a restart."
+                try {
+                    wsl --install --distribution $ubuntuDistro
+                    Write-Warning "WSL installation initiated. You may need to restart your computer."
+                    Write-Info "After restart, run this script again to continue setup."
+                    exit 0
+                } catch {
+                    Write-Error "WSL installation failed. Please install manually:"
+                    Write-Info "1. Run PowerShell as Administrator"
+                    Write-Info "2. Execute: wsl --install"
+                    Write-Info "3. Restart your computer"
+                    Write-Info "4. Run this script again"
+                    exit 1
+                }
+            } else {
+                Write-Info "WSL not installed - will use Windows-only development mode"
+                $wslAvailable = $false
+            }
         } else {
-            Write-Info "WSL not available - Windows-only development mode"
+            # WSL is installed, check for Ubuntu distribution
+            Write-Info "WSL is installed. Checking for $ubuntuDistro distribution..."
+            
+            $wslDistros = wsl -l -v 2>$null
+            $foundUbuntu = $false
+            
+            if ($wslDistros) {
+                $wslDistros -split "`n" | ForEach-Object {
+                    $line = $_.Trim()
+                    if ($line -and $line -notmatch "^Windows Subsystem") {
+                        # Clean the line of any special characters
+                        $cleanLine = $line -replace '[^\x20-\x7F]', ''  # Remove non-printable characters
+                        
+                        # Check if this line contains our Ubuntu distribution
+                        if ($cleanLine -like "*$ubuntuDistro*") {
+                            $foundUbuntu = $true
+                            Write-Success "Found Ubuntu distribution: $cleanLine"
+                        }
+                    }
+                }
+            }
+            
+            if (-not $foundUbuntu) {
+                if ($needsLinux) {
+                    Write-Info "$ubuntuDistro not found. Installing $ubuntuDistro..."
+                    try {
+                        wsl --install --distribution $ubuntuDistro
+                        Write-Warning "$ubuntuDistro installation initiated."
+                        Write-Info "Please wait for the installation to complete and run this script again."
+                        Write-Info "You may be prompted to create a user account for Ubuntu."
+                        exit 0
+                    } catch {
+                        Write-Error "$ubuntuDistro installation failed. Please install manually:"
+                        Write-Info "1. Open Microsoft Store"
+                        Write-Info "2. Search for 'Ubuntu 24.04'"
+                        Write-Info "3. Install the distribution"
+                        Write-Info "4. Run this script again"
+                        exit 1
+                    }
+                } else {
+                    Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
+                    $wslAvailable = $false
+                }
+            } else {
+                Write-Success "Ubuntu distribution is available"
+                $wslAvailable = $true
+                
+                # Set as default distribution
+                try {
+                    wsl -s $ubuntuDistro 2>$null
+                    Write-Success "$ubuntuDistro set as default WSL distribution"
+                } catch {
+                    Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
+                }
+            }
+        }
+        
+        # Enhanced WSL development environment setup
+        if ($wslAvailable -and $ubuntuDistro) {
+            Write-Step "WSL Development Environment Setup"
+            
+            # Get sudo password upfront for package management operations
+            $sudoPassword = Get-SudoPassword $ubuntuDistro
+            if ($null -eq $sudoPassword -and (Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $ubuntuDistro) -ne "NOPASSWD") {
+                Write-Warning "Cannot perform package management without sudo access. Continuing with limited setup..."
+            } else {
+                # Update package lists
+                Write-Info "Updating package lists..."
+                if ($null -eq $sudoPassword) {
+                    $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
+                } else {
+                    $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro $sudoPassword
+                }
+                
+                if ($updateResult) {
+                    # Check for upgradeable packages with intelligent handling
+                    $upgradeableCount = Get-WSLCommandOutput "apt list --upgradeable 2>/dev/null | grep -v 'WARNING:' | wc -l" $ubuntuDistro
+                    if ($upgradeableCount -and [int]$upgradeableCount -gt 1) {
+                        Write-Info "Found $([int]$upgradeableCount - 1) upgradeable packages"
+                        
+                        # Check for critical development packages
+                        $criticalPackages = @("python3", "python3-pip", "python3-venv", "python3-dev", "build-essential", "git")
+                        $upgradeablePackages = Get-WSLCommandOutput "apt list --upgradeable 2>/dev/null | grep -v 'WARNING:' | awk -F'/' '{print `$1}'" $ubuntuDistro
+                        $criticalUpgrades = @()
+                        
+                        if ($upgradeablePackages) {
+                            foreach ($package in $criticalPackages) {
+                                if ($upgradeablePackages -split "`n" | Where-Object { $_ -like "$package*" }) {
+                                    $criticalUpgrades += $package
+                                }
+                            }
+                        }
+                        
+                        if ($criticalUpgrades.Count -gt 0) {
+                            Write-Warning "⚠ Development tools with available upgrades detected:"
+                            foreach ($pkg in $criticalUpgrades) {
+                                $currentVersion = Get-WSLCommandOutput "dpkg -l | grep '^ii' | grep '$pkg ' | awk '{print `$3}'" $ubuntuDistro
+                                Write-Host "  • $pkg (current: $currentVersion)" -ForegroundColor Yellow
+                            }
+                            Write-Info "`nUpgrading these packages may affect existing projects that depend on current versions."
+                            
+                            $upgradeChoice = Get-UserInput "`nProceed with system package upgrades? (y/n)" "n"
+                            if ($upgradeChoice -match '^[Yy]') {
+                                Write-Info "Proceeding with package upgrades..."
+                                if ($null -eq $sudoPassword) {
+                                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
+                                } else {
+                                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro $sudoPassword
+                                }
+                            } else {
+                                Write-Success "Skipping package upgrades to preserve current versions"
+                            }
+                        } else {
+                            # Safe to upgrade non-critical packages
+                            if ($null -eq $sudoPassword) {
+                                Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
+                            } else {
+                                Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro $sudoPassword
+                            }
+                        }
+                    } else {
+                        Write-Success "System packages are up to date"
+                    }
+                    
+                    # Install/verify Python development environment
+                    Write-Info "Setting up Python development environment..."
+                    
+                    # Check Python version with intelligent handling
+                    $pythonVersion = Get-WSLCommandOutput "python3 --version 2>/dev/null" $ubuntuDistro
+                    if ($pythonVersion -and $pythonVersion -match "Python 3\.(\d+)\.(\d+)") {
+                        $pythonMajor = [int]$matches[1]
+                        $pythonMinor = [int]$matches[2]
+                        if ($pythonMajor -ge 10 -or ($pythonMajor -eq 9 -and $pythonMinor -ge 0)) {
+                            Write-Success "Python $pythonVersion is already installed"
+                        } else {
+                            Write-Warning "⚠ Python version $pythonVersion may be outdated for some StrangeLoop templates"
+                            $pythonUpgradeChoice = Get-UserInput "`nUpgrade Python to latest version? (y/n)" "n"
+                            if ($pythonUpgradeChoice -match '^[Yy]') {
+                                if ($null -eq $sudoPassword) {
+                                    Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
+                                } else {
+                                    Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro $sudoPassword
+                                }
+                            }
+                        }
+                    } else {
+                        Write-Info "Installing Python development tools..."
+                        if ($null -eq $sudoPassword) {
+                            Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
+                        } else {
+                            Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro $sudoPassword
+                        }
+                    }
+                    
+                    # Install pipx and Poetry with version checking
+                    $pipxVersion = Get-WSLCommandOutput "pipx --version 2>/dev/null" $ubuntuDistro
+                    if ($pipxVersion) {
+                        Write-Success "pipx is already installed (version: $pipxVersion)"
+                    } else {
+                        Write-Info "Installing pipx..."
+                        if ($null -eq $sudoPassword) {
+                            Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro
+                        } else {
+                            Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro $sudoPassword
+                        }
+                        Invoke-WSLCommand "pipx ensurepath" "Configuring pipx PATH" $ubuntuDistro
+                    }
+                    
+                    $poetryVersion = Get-WSLCommandOutput "poetry --version 2>/dev/null || ~/.local/bin/poetry --version 2>/dev/null" $ubuntuDistro
+                    if ($poetryVersion) {
+                        Write-Success "Poetry is already installed ($poetryVersion)"
+                        Invoke-WSLCommand "poetry config virtualenvs.in-project true 2>/dev/null || ~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
+                    } else {
+                        Write-Info "Installing Poetry..."
+                        Invoke-WSLCommand "pipx install poetry" "Installing Poetry" $ubuntuDistro
+                        Invoke-WSLCommand "~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
+                    }
+                    
+                    # Clear sudo password from memory for security
+                    if ($sudoPassword) {
+                        $sudoPassword.Dispose()
+                        Write-Info "Cleared sudo credentials from memory"
+                    }
+                }
+            }
         }
     }
     
@@ -432,11 +796,10 @@ try {
         
         if ($needsLinux) {
             # WSL development - use Linux file system
-            $wslDistro = "Ubuntu-24.04"
             # Detect WSL user once to avoid placeholder issues
             $detectedWslUser = $null
             try {
-                $detectedWslUser = (wsl -d $wslDistro -- bash -lc 'whoami' 2>$null)
+                $detectedWslUser = (wsl -d $ubuntuDistro -- bash -lc 'whoami' 2>$null)
                 if ($detectedWslUser) { $detectedWslUser = $detectedWslUser.Trim() }
             } catch { }
             if (-not $detectedWslUser) {
@@ -447,7 +810,7 @@ try {
             Write-Info "Using WSL environment for project initialization"
             $appDir = Get-UserInput "Application directory (WSL path)" $defaultAppDir
             # Resolve any placeholders in the provided path
-            $appDirResolved = Resolve-WSLPath -Path $appDir -Distribution $wslDistro
+            $appDirResolved = Resolve-WSLPath -Path $appDir -Distribution $ubuntuDistro
             
             # Create directory in WSL and check for existing projects
         Write-Info "Creating application directory in WSL: $appDirResolved"
