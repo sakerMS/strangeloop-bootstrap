@@ -1,4 +1,12 @@
-# StrangeLoop Bootstrap - Deployment Guide
+# StrangeLoop Boo```
+strangeloop-bootstrap/
+├── setup_strangeloop.ps1                 # ✅ Single standalone setup script
+├── reset_strangeloop.ps1                 # 🔄 SAFE RESET script (clean up setup changes)
+├── docs/                                 # 📂 Documentation folder
+│   ├── user_guide.md                     # 📚 User installation guide
+│   └── deployment_guide.md               # 📚 This deployment guide
+└── README.md                             # 📖 Main documentation
+```loyment Guide
 
 Complete guide for deploying and maintaining the StrangeLoop Bootstrap system on GitHub.
 
@@ -39,8 +47,6 @@ https://raw.githubusercontent.com/USERNAME/strangeloop-bootstrap/main/FILEPATH
 ```
 Setup Script:   https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1
 Reset Script:   https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1
-Linux Setup:    https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/scripts/strangeloop_linux.ps1
-Windows Setup:  https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/scripts/strangeloop_windows.ps1
 ```
 
 ## 📋 **User Installation Commands**

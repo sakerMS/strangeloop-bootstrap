@@ -1,4 +1,38 @@
-# StrangeLoop Bootstrap Scripts
+# St## 🎯 Repository Structure
+
+```
+strangeloop-bootstrap/
+├── setup_strangeloop.ps1                # ⭐ C## 📁 Deployment Structure
+
+When deployed to GitHub, the structure is:
+```
+sakerMS/strangeloop-bootstrap/
+├── setup_strangeloop.ps1                # ⭐ Complete s## 📋 File Descriptions
+
+| File | Purpose | User Facing | Architecture |
+|------|---------|-------------|-------------|
+| `setup_strangeloop.ps1` | Complete standalone setup | ✅ Download & Run | **Single Script (no parameters)** |
+| `reset_strangeloop.ps1` | **SAFE RESET - Remove setup changes only** | 🔄 **Essential for troubleshooting** | **Project-safe cleanup** |
+| `docs/user_guide.md` | User guide | 📚 Documentation | Documentation |
+| `docs/deployment_guide.md` | Deployment guide | 📚 Documentation | Documentation |
+
+### Key Changes in Single Script Architecture
+- ❌ **Removed**: All parameters - now completely parameterless
+- ❌ **Removed**: Legacy platform scripts - completely eliminated
+- ❌ **Removed**: Download functionality and external dependencies
+- ❌ **Removed**: Logging prefixes and complex output formatting
+├── reset_strangeloop.ps1                # 🔄 Safe reset functionality
+├── docs/                                # 📂 Documentation
+│   ├── user_guide.md                    # 📚 User installation guide
+│   └── deployment_guide.md              # 📚 GitHub deployment guide
+└── README.md                            # 📖 Main documentation
+```one Setup (Single Entry Point)
+├── reset_strangeloop.ps1                # 🔄 RESET SCRIPT - Safely revert setup changes
+├── docs/                                # 📂 Documentation
+│   ├── user_guide.md                    # 📚 User installation guide
+│   └── deployment_guide.md              # 📚 GitHub deployment guide
+└── README.md                            # 📖 This file
+```strap Scripts
 
 This directory contains the complete StrangeLoop CLI standalone setup system with a minimalist single-script architecture.
 
@@ -67,27 +101,21 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 ## 🎯 **Component Overview**
 
 ### Primary Script (Complete Solution)
-- **`setup_strangeloop.ps1`** - **Unified Complete Setup Script**
+- **`setup_strangeloop.ps1`** - **Single Standalone Setup Script**
   - Contains ALL functionality in a single file
   - Handles environment analysis and loop selection
   - Automatically derives WSL/Windows environment from selected loop
   - Supports both WSL and Windows project initialization
-  - No external script dependencies - completely self-contained
-  - **Minimalist Design**: Only 1 optional parameter for maximum simplicity
+  - No external dependencies - completely self-contained
+  - **Single Script Design**: No parameters required - maximum simplicity
 
 ### Reset Script (Troubleshooting)
 - **`reset_strangeloop.ps1`** - **SAFE CLEANUP** - Remove only setup changes
-  - ✅ Removes temp-strangeloop-scripts directory
   - ✅ Resets execution policy changes  
   - ✅ Cleans temporary files
   - 🛡️ **PRESERVES all your projects and work**
   - Perfect for: Testing, troubleshooting, or cleaning up after setup
   - **Safe by design** - Won't touch user-created content
-
-### Platform Scripts (Legacy)
-- **`scripts/strangeloop_linux.ps1`** - Linux/WSL-specific platform logic (legacy)
-- **`scripts/strangeloop_windows.ps1`** - Windows-specific platform logic (legacy)
-- **Note**: These are legacy files and are no longer used by the main setup script
 
 ### Documentation & Tools
 - **`docs/user_guide.md`** - Complete user installation and usage guide
