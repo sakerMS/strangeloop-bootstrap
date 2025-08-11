@@ -1,6 +1,6 @@
 # StrangeLoop CLI Bootstrap - User Guide
 
-Automated setup and installation scripts for StrangeLoop CLI development environment.
+Zero-configuration automated setup for StrangeLoop CLI development environment.
 
 ## 🚀 **Quick Install**
 
@@ -12,131 +12,91 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 
 > **Note**: This uses the sakerMS GitHub repository.
 
-## 📋 **What This Does**
+## � **Quick Reset (Clean Up)**
+
+If you need to clean up setup changes or troubleshoot:
+
+```powershell
+# Download and run reset script (SAFE - preserves your projects)
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"; .\reset_strangeloop.ps1
+```
+
+**✅ The reset script is SAFE:**
+- Only removes setup-related changes (execution policy)
+- **Preserves all your StrangeLoop projects and work**
+- Does not uninstall StrangeLoop CLI or affect user data
+
+## �📋 **What This Does**
 
 The bootstrap script will:
 
-- ✅ **Check Prerequisites**: Git, Azure CLI, Git LFS
-- ✅ **Configure Git**: Line endings and user settings
-- ✅ **Install StrangeLoop**: CLI and dependencies
-- ✅ **Analyze Templates**: Show available project templates
-- ✅ **Environment Setup**: Platform-specific configuration
+- ✅ **Check Prerequisites**: PowerShell, Git, curl
+- ✅ **Install StrangeLoop**: CLI and dependencies (always latest version)
+- ✅ **Analyze Environment**: WSL availability for Linux environments
+- ✅ **Discover Templates**: Show available project templates
+- ✅ **Smart Setup**: Platform-specific configuration based on your choice
 
-## ⚙️ **Command Options**
+## ⚙️ **Usage (Ultra-Simple)**
 
-### **Basic Usage**
+### **Standard Setup (Recommended)**
 ```powershell
-# Basic installation
+# Complete setup - no parameters needed
 .\setup_strangeloop.ps1
-
-# With Git user configuration
-.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
 ```
 
-### **Skip Options**
-```powershell
-# Skip prerequisites check (if tools already installed)
-.\setup_strangeloop.ps1 -SkipPrerequisites
+## 🎯 **Design Philosophy**
 
-# Skip development tools installation
-.\setup_strangeloop.ps1 -SkipDevelopmentTools
+### **Zero Configuration**
+- **No parameters needed** - just run the script
+- **Always reliable** - checks prerequisites and installs latest packages
+- **Smart detection** - determines environment from your loop selection
+- **Single script** - completely standalone with no external dependencies
 
-# Skip both (minimal setup)
-.\setup_strangeloop.ps1 -SkipPrerequisites -SkipDevelopmentTools
-```
-
-**When to use `-SkipPrerequisites`:**
-- ✅ Git is already installed and configured
-- ✅ Azure CLI is already installed
-- ✅ Git LFS is already available
-- ✅ Running on managed corporate environments
-- ✅ Prerequisites installed via different package managers
-
-**When to use `-SkipDevelopmentTools`:**
-- ✅ Python environment already configured
-- ✅ Poetry and pipx already installed
-- ✅ Docker already set up
-- ✅ WSL already configured for development
-- ✅ Custom development environment in place
-
-### **Maintenance Options**
-```powershell
-# Maintenance mode (update packages only)
-.\setup_strangeloop.ps1 -MaintenanceMode
-
-# Enable verbose logging for troubleshooting
-.\setup_strangeloop.ps1 -Verbose
-
-# Verbose mode with maintenance (detailed package updates)
-.\setup_strangeloop.ps1 -Verbose -MaintenanceMode
-
-# Set Git user configuration
-.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
-
-### **Advanced Combinations**
-```powershell
-# Combine multiple options
-.\setup_strangeloop.ps1 -SkipPrerequisites -UserName "Your Name" -UserEmail "your.email@company.com"
-
-# Maintenance mode with custom user settings
-.\setup_strangeloop.ps1 -MaintenanceMode -UserName "Your Name" -UserEmail "your.email@company.com"
-
-# Verbose mode with skipped components
-.\setup_strangeloop.ps1 -Verbose -SkipPrerequisites -SkipDevelopmentTools
-
-# Use custom repository URL
-.\setup_strangeloop.ps1 -BaseUrl "https://raw.githubusercontent.com/your-fork/strangeloop-bootstrap/main"
-```
-
-### **Enterprise Scenarios**
-```powershell
-# Corporate environment with pre-installed tools
-.\setup_strangeloop.ps1 -SkipPrerequisites -UserName "John Doe" -UserEmail "john.doe@company.com"
-
-# CI/CD pipeline with existing Docker
-.\setup_strangeloop.ps1 -SkipDevelopmentTools -MaintenanceMode
-
-# Troubleshooting deployment issues
-.\setup_strangeloop.ps1 -Verbose -SkipPrerequisites
-```
-```
+**Use cases:**
+- ✅ Pre-downloading for offline environments
+- ✅ Development and testing scenarios
+- ✅ Advanced customization needs
 
 ## 🏗️ **Architecture**
 
-### **Modular Design**
+### **Minimalist Design**
 ```
-setup_strangeloop.ps1           # 🚀 Main launcher (download this)
-├── scripts/strangeloop_main.ps1   # 🎯 Main orchestrator
+setup_strangeloop.ps1           # 🚀 Complete setup (download this only)
+├── Embedded functionality      # 🎯 All features built-in
+├── Smart environment detection # 🧠 WSL vs Windows auto-detection  
+└── Optional platform scripts   # 📦 Downloaded only if needed
+    ├── strangeloop_linux.ps1   # � Linux/WSL specifics
+    └── strangeloop_windows.ps1 # 🪟 Windows specifics
+```
 ├── scripts/strangeloop_linux.ps1  # 🐧 Linux/WSL setup
 └── scripts/strangeloop_windows.ps1 # 🪟 Windows setup
 ```
 
 ### **Smart Features**
-- **📥 Dynamic Downloads**: Latest scripts downloaded automatically
-- **🌐 Always Current**: Uses latest repository scripts
+- **📥 Self-Contained**: No external downloads needed for standard setup
+- **🌐 Always Current**: Ensures latest StrangeLoop CLI and packages
 - **🎨 Rich Output**: Color-coded status messages and progress
-- **⚡ Platform Detection**: Automatically configures for your environment
+- **⚡ Smart Detection**: Automatically configures for your environment
 - **🛡️ Error Handling**: Comprehensive error recovery and troubleshooting
+- **🎯 Zero Config**: No parameters needed for standard installation
 
-## 🛠️ **Alternative Installation Methods**
+## 🛠️ **Installation Methods**
 
-### **Option 1: Download and Run**
+### **Option 1: One-Line Install (Recommended)**
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
+```
+
+### **Option 2: Download and Run**
 1. Download `setup_strangeloop.ps1` from the repository
 2. Open PowerShell in the download folder
 3. Run `.\setup_strangeloop.ps1`
 
-### **Option 2: Clone Repository**
+### **Option 3: Clone Repository**
 ```powershell
 git clone https://github.com/sakerMS/strangeloop-bootstrap.git
 cd strangeloop-bootstrap
 .\setup_strangeloop.ps1
-```
-
-### **Option 3: Custom Repository**
-You can specify a custom repository URL for enterprise deployments:
-
-```powershell
-.\setup_strangeloop.ps1 -BaseUrl "https://raw.githubusercontent.com/your-org/strangeloop-bootstrap/main"
 ```
 
 ## 🎯 **Supported Templates**
@@ -151,15 +111,14 @@ StrangeLoop includes templates for:
 
 ## 🔧 **Requirements**
 
-### **Prerequisites** (installed automatically if missing)
+### **Prerequisites** (checked and installed automatically)
 - **PowerShell 5.1+**: Windows PowerShell or PowerShell Core
-- **Git 2.0+**: Version control system
-- **Azure CLI**: Microsoft Azure command-line interface
-- **Git LFS**: Large file support for Git
+- **Git**: Version control system
+- **curl**: Download utility (typically pre-installed)
 
 ### **Supported Platforms**
 - **✅ Windows 10/11**: Native PowerShell support
-- **✅ WSL (Windows Subsystem for Linux)**: Recommended for Linux templates
+- **✅ WSL (Windows Subsystem for Linux)**: Automatically detected and used for Linux templates
 - **✅ Linux**: With PowerShell Core installed
 
 ## 🐛 **Troubleshooting**
@@ -203,38 +162,43 @@ Combine both parameters (`-SkipPrerequisites -SkipDevelopmentTools`) when:
 Right-click PowerShell → "Run as Administrator"
 ```
 
-### **Reset Everything (Start Over)**
+### **🔄 Reset Everything (Start Over) - SAFE METHOD**
 
-If you encounter persistent issues or want to completely start over:
+If you encounter persistent issues or want to clean up setup changes:
 
 ```powershell
-# Download reset script
+# 🔄 RECOMMENDED - Download and run safe reset script
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
 
-# Basic reset (removes everything)
+# Safe reset (preserves your projects)
 .\reset_strangeloop.ps1
 
-# Reset with options
-.\reset_strangeloop.ps1 -KeepWSL          # Keep WSL Ubuntu distribution
-.\reset_strangeloop.ps1 -KeepGit          # Keep Git global configuration
-.\reset_strangeloop.ps1 -WhatIf           # Preview what would be reset
-.\reset_strangeloop.ps1 -Force            # Skip all confirmations
+# Preview what would be reset (no actual changes)
+.\reset_strangeloop.ps1 -WhatIf
+
+# Force reset without prompts
+.\reset_strangeloop.ps1 -Force
 ```
 
-**What the reset script removes:**
-- ✅ StrangeLoop CLI installation
-- ✅ Python packages (pipx, Poetry packages)
-- ✅ WSL Ubuntu distribution (optional)
-- ✅ Git global configuration changes (optional)
-- ✅ Environment variables
-- ✅ Docker networks created by setup
-- ✅ Temporary files
+**✅ Safe Reset Features:**
+- ✅ **Only removes setup-related changes** (temp files, execution policy)
+- 🛡️ **Preserves all your StrangeLoop projects and work**
+- ✅ **Does not uninstall StrangeLoop CLI** or affect user data
+- ✅ **Perfect for troubleshooting** without losing your work
+- ✅ **No risk of data loss** - your projects stay intact
+
+**When to use the reset script:**
+- 🔧 Setup script encountered errors
+- 🔧 Want to clean up temporary files
+- 🔧 Execution policy needs to be reset
+- 🔧 Testing or troubleshooting setup issues
+- 🔧 Starting fresh without losing existing projects
 
 ### **Getting Help**
 - **📝 Create an Issue**: Use GitHub Issues for bug reports
 - **📖 Documentation**: Check `/docs` folder for detailed guides
 - **💬 Discussions**: Use GitHub Discussions for questions
-- **🔄 Reset Script**: Use reset script to resolve issues and start over
+- **🔄 Reset Script**: Use reset script to resolve issues safely
 
 ---
 

@@ -7,7 +7,7 @@ Complete guide for deploying and maintaining the StrangeLoop Bootstrap system on
 ### **Step 1: Create GitHub Repository**
 1. **Go to GitHub**: https://github.com/new
 2. **Repository name**: `strangeloop-bootstrap`
-3. **Description**: "StrangeLoop CLI Bootstrap Scripts - Automated setup and installation"
+3. **Description**: "StrangeLoop CLI Bootstrap Scripts - Single script automated setup"
 4. **Visibility**: ✅ Public (for unrestricted downloads)
 5. **Initialize**: ✅ Add README
 6. **Click**: "Create repository"
@@ -17,12 +17,11 @@ Upload files to your GitHub repository with this structure:
 
 ```
 strangeloop-bootstrap/
-├── setup_strangeloop.ps1                 # ✅ Main launcher (users download this)
-├── reset_strangeloop.ps1                 # 🔄 Reset script (revert all changes)
-├── scripts/                              # 📂 Core setup scripts folder
-│   ├── strangeloop_main.ps1             # ✅ Main orchestrator
-│   ├── strangeloop_linux.ps1            # ✅ Linux/WSL setup
-│   └── strangeloop_windows.ps1          # ✅ Windows setup
+├── setup_strangeloop.ps1                 # ✅ Single standalone setup script
+├── reset_strangeloop.ps1                 # 🔄 SAFE RESET script (clean up setup changes)
+├── scripts/                              # 📂 Legacy files (not used)
+│   ├── strangeloop_linux.ps1             # �️ Legacy - No longer used
+│   └── strangeloop_windows.ps1           # 🗃️ Legacy - No longer used
 ├── docs/                                 # 📂 Documentation folder
 │   ├── user_guide.md                     # 📚 User installation guide
 │   └── deployment_guide.md               # 📚 This deployment guide
@@ -38,8 +37,8 @@ https://raw.githubusercontent.com/USERNAME/strangeloop-bootstrap/main/FILEPATH
 
 ### **Individual File URLs**
 ```
-Main Script:    https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1
-Orchestrator:   https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/scripts/strangeloop_main.ps1
+Setup Script:   https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1
+Reset Script:   https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1
 Linux Setup:    https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/scripts/strangeloop_linux.ps1
 Windows Setup:  https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/scripts/strangeloop_windows.ps1
 ```
@@ -51,26 +50,25 @@ Windows Setup:  https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
 ```
 
+### **Reset/Cleanup Command**
+```powershell
+# Safe reset - removes only setup changes, preserves projects
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"; .\reset_strangeloop.ps1
+```
+
 ### **Two-Step Installation**
 ```powershell
-# Download the launcher
+# Download the script
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"
 
-# Run the setup
+# Run the setup (no parameters needed)
 .\setup_strangeloop.ps1
 ```
 
-### **With Parameters**
+### **One-Line Installation**
 ```powershell
-# Download and run with custom options
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"
-.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "you@domain.com"
-
-# Maintenance mode (update packages only)
-.\setup_strangeloop.ps1 -MaintenanceMode
-
-# Skip prerequisites and maintenance mode
-.\setup_strangeloop.ps1 -SkipPrerequisites -MaintenanceMode
+# Download and run in one command
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
 ```
 
 ### **Custom Repository**
@@ -129,24 +127,24 @@ Create your own fork for enterprise customization:
 ### **Group Policy Deployment**
 
 Create a Group Policy script that:
-1. Downloads the launcher to user's temp directory
-2. Executes with predefined parameters
-3. Cleans up after completion
+1. Downloads the single setup script to user's directory
+2. Executes with zero configuration required
+3. All functionality self-contained in one file
 
 ### **SCCM/Intune Deployment**
 
-Package the launcher script with:
-1. Predefined BaseUrl pointing to internal repository
-2. Silent execution parameters
+Package the setup script for:
+1. Silent execution in enterprise environments
+2. Predefined project directories
 3. Logging for deployment tracking
 
 ## 🔄 **Maintenance**
 
-### **Updating Scripts**
+### **Updating the Script**
 
-1. Update scripts in your repository
-2. Users automatically get latest version on next run
-3. No need to redistribute - launcher always downloads fresh copies
+1. Update `setup_strangeloop.ps1` in your repository
+2. Users automatically get latest version on next download
+3. No dependencies to manage - single file deployment
 
 ### **Version Control**
 

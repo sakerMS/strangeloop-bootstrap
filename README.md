@@ -1,99 +1,118 @@
 # StrangeLoop Bootstrap Scripts
 
-This directory contains the complete StrangeLoop CLI standalone setup system that can be deployed and downloaded independently from GitHub.
+This directory contains the complete StrangeLoop CLI standalone setup system with a minimalist single-script architecture.
 
 ## 🎯 Repository Structure
 
 ```
 strangeloop-bootstrap/
-├── setup_strangeloop.ps1                # ⭐ Main launcher (User Entry Point)
-├── reset_strangeloop.ps1                # 🔄 Reset script (revert all changes)
-├── scripts/                             # 📂 Core Setup Scripts
-│   ├── strangeloop_main.ps1             # 🎯 Main orchestrator
-│   ├── strangeloop_linux.ps1            # 🐧 Linux/WSL setup
-│   └── strangeloop_windows.ps1          # 🪟 Windows setup
+├── setup_strangeloop.ps1                # ⭐ Complete Standalone Setup (Single Entry Point)
+├── reset_strangeloop.ps1                # 🔄 RESET SCRIPT - Safely revert setup changes
+├── scripts/                             # 📂 Legacy Platform Scripts (Unused)
+│   ├── strangeloop_linux.ps1            # �️ Legacy - No longer used
+│   └── strangeloop_windows.ps1          # 🗃️ Legacy - No longer used
 ├── docs/                                # 📂 Documentation
 │   ├── user_guide.md                    # 📚 User installation guide
 │   └── deployment_guide.md              # 📚 GitHub deployment guide
 └── README.md                            # 📖 This file
 ```
 
-## ⚙️ **Parameter Reference**
+## 🔄 **Reset Script - Clean Uninstall**
 
-### **Core Parameters**
-- **`-UserName`** - Git username for configuration (e.g., "John Doe")
-- **`-UserEmail`** - Git email for configuration (e.g., "john@company.com")
-- **`-BaseUrl`** - Custom repository URL for enterprise deployments
+**`reset_strangeloop.ps1`** - Safely remove all changes made by the setup script:
 
-### **Skip Parameters**
-- **`-SkipPrerequisites`** - Skip installation of system prerequisites
-  - Skips: Git, Azure CLI, Git LFS installation
-  - Use when: Tools are already installed via other means
-  - Example: `.\setup_strangeloop.ps1 -SkipPrerequisites`
+### **What it removes:**
+- ✅ **Execution policy changes** (resets to Restricted if changed to RemoteSigned)
+- ✅ **Temporary files** (cleans up any setup-related temp files)
 
-- **`-SkipDevelopmentTools`** - Skip installation of development environment
-  - Skips: Python, Poetry, pipx, Docker setup
-  - Use when: Development tools are already configured
-  - Example: `.\setup_strangeloop.ps1 -SkipDevelopmentTools`
+### **What it keeps safe:**
+- 🛡️ **Your StrangeLoop projects** - All project directories remain untouched
+- 🛡️ **StrangeLoop CLI** - The CLI itself is not uninstalled
+- 🛡️ **User data** - All your work and configurations are preserved
 
-### **Mode Parameters**
-- **`-MaintenanceMode`** - Update packages only (no fresh installation)
-  - Updates: Python packages, WSL packages, Poetry dependencies
-  - Use when: Performing regular maintenance updates
-  - Example: `.\setup_strangeloop.ps1 -MaintenanceMode`
+### **Usage:**
+```powershell
+# Safe reset (asks for confirmation)
+.\reset_strangeloop.ps1
 
-- **`-Verbose`** - Enable detailed logging for troubleshooting
-  - Shows: Download progress, parameter passing, command execution
-  - Use when: Debugging issues or wanting detailed output
-  - Example: `.\setup_strangeloop.ps1 -Verbose`
+# See what would be removed without actually doing it
+.\reset_strangeloop.ps1 -WhatIf
 
-- **`-WhatIf`** - Preview mode - show what would be done without executing
-  - Shows: All operations that would be performed
-  - Executes: No actual installation or configuration changes
-  - Use when: Testing parameters, validating setup before execution
-  - Example: `.\setup_strangeloop.ps1 -WhatIf`
+# Force reset without prompts
+.\reset_strangeloop.ps1 -Force
+
+# Download and run reset script directly
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
+.\reset_strangeloop.ps1
+```
+
+## ⚙️ **Setup Script Usage**
+
+### **Minimalist Design**
+*All complexity has been removed for maximum simplicity and reliability. No configuration options, no skip parameters, no verbose modes.*
+
+### **Single Command**
+```powershell
+.\setup_strangeloop.ps1
+```
+
+### **Complete Setup Features**
+- **Complete Setup** - Full installation and configuration
+  - Always checks prerequisites (PowerShell, Git, curl)
+  - Always installs/updates StrangeLoop CLI to latest version
+  - Always installs/updates all required packages
+  - Interactive loop selection with smart environment detection
+  - Example: `.\setup_strangeloop.ps1`
 
 ## 🎯 **Component Overview**
 
-### Primary Script (User Entry Point)
-- **`setup_strangeloop.ps1`** - Standalone launcher that users download and run
-  - Downloads and executes all other scripts dynamically from GitHub
-  - Handles parameter passing and error recovery
-  - Requires internet connection and GitHub access
+### Primary Script (Complete Solution)
+- **`setup_strangeloop.ps1`** - **Unified Complete Setup Script**
+  - Contains ALL functionality in a single file
+  - Handles environment analysis and loop selection
+  - Automatically derives WSL/Windows environment from selected loop
+  - Supports both WSL and Windows project initialization
+  - No external script dependencies - completely self-contained
+  - **Minimalist Design**: Only 1 optional parameter for maximum simplicity
 
 ### Reset Script (Troubleshooting)
-- **`reset_strangeloop.ps1`** - Revert all changes made by the setup
-  - Removes StrangeLoop CLI installation
-  - Cleans up Python packages and WSL environment
-  - Resets Git configuration and environment variables
-  - Useful for testing, troubleshooting, or starting over
+- **`reset_strangeloop.ps1`** - **SAFE CLEANUP** - Remove only setup changes
+  - ✅ Removes temp-strangeloop-scripts directory
+  - ✅ Resets execution policy changes  
+  - ✅ Cleans temporary files
+  - 🛡️ **PRESERVES all your projects and work**
+  - Perfect for: Testing, troubleshooting, or cleaning up after setup
+  - **Safe by design** - Won't touch user-created content
 
-### Core Setup Scripts (Downloaded Dynamically)
-- **`scripts/strangeloop_main.ps1`** - Main orchestrator that handles the complete setup flow
-- **`scripts/strangeloop_linux.ps1`** - Linux/WSL environment setup and dependency management  
-- **`scripts/strangeloop_windows.ps1`** - Windows environment setup and dependency management
+### Platform Scripts (Legacy)
+- **`scripts/strangeloop_linux.ps1`** - Linux/WSL-specific platform logic (legacy)
+- **`scripts/strangeloop_windows.ps1`** - Windows-specific platform logic (legacy)
+- **Note**: These are legacy files and are no longer used by the main setup script
 
 ### Documentation & Tools
 - **`docs/user_guide.md`** - Complete user installation and usage guide
 - **`docs/deployment_guide.md`** - GitHub deployment and maintenance guide
 
-## 🚀 How It Works
+## 🚀 How It Works (Single Script Architecture)
 
-1. **User Downloads**: Only needs `setup_strangeloop.ps1`
-2. **Dynamic Download**: Launcher downloads latest scripts from GitHub
-3. **Execution**: Scripts run with temporary files and proper cleanup
-4. **Online Only**: Always uses latest scripts from repository
+1. **Single File**: Users only need `setup_strangeloop.ps1` - completely standalone
+2. **Zero Configuration**: No parameters needed - just run it
+3. **Smart Environment Detection**: Automatically determines WSL/Windows based on selected loop
+4. **Loop-First Approach**: Shows all available loops, then derives environment requirements
+5. **Self-Contained**: All functionality built into the main script - no external dependencies
+6. **Always Reliable**: Always checks prerequisites and installs latest packages
+7. **Clean Output**: No logging prefixes - simple, clear messages
 
 ## 📁 Deployment Structure
 
-When deployed to GitHub, the structure should be:
+When deployed to GitHub, the structure is:
 ```
 sakerMS/strangeloop-bootstrap/
-├── setup_strangeloop.ps1                # ⭐ User download point
-├── scripts/                             # 📂 Core setup scripts
-│   ├── strangeloop_main.ps1             # 🎯 Main orchestrator
-│   ├── strangeloop_linux.ps1            # 🐧 Linux/WSL setup
-│   └── strangeloop_windows.ps1          # 🪟 Windows setup
+├── setup_strangeloop.ps1                # ⭐ Complete standalone setup
+├── reset_strangeloop.ps1                # 🔄 Safe reset functionality
+├── scripts/                             # 📂 Legacy files (not used)
+│   ├── strangeloop_linux.ps1            # �️ Legacy
+│   └── strangeloop_windows.ps1          # 🗃️ Legacy
 ├── docs/                                # 📂 Documentation
 │   ├── user_guide.md                    # 📚 User installation guide
 │   └── deployment_guide.md              # 📚 GitHub deployment guide
@@ -112,63 +131,61 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 
 ## 💻 Usage Examples
 
-### For End Users
+### For End Users (Ultra-Simplified)
 ```powershell
-# One-line installation
+# One-line installation (complete setup)
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
 
-# With parameters
-.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "you@domain.com"
+# Standard usage (no parameters needed)
+.\setup_strangeloop.ps1
+```
 
-# Skip components if already installed
-.\setup_strangeloop.ps1 -SkipPrerequisites          # Skip Git, Azure CLI, Git LFS installation
-.\setup_strangeloop.ps1 -SkipDevelopmentTools       # Skip Python, Poetry, pipx, Docker setup
+### Smart Environment Selection
+The script automatically determines the environment based on your loop selection:
 
-# Maintenance mode (update packages only)
-.\setup_strangeloop.ps1 -MaintenanceMode
-
-# Enable verbose logging for troubleshooting
-.\setup_strangeloop.ps1 -Verbose
-
-# Combined options
-.\setup_strangeloop.ps1 -Verbose -MaintenanceMode -UserName "Your Name"
-
-# Skip components
-.\setup_strangeloop.ps1 -SkipPrerequisites -SkipDevelopmentTools
-
-# Combined skipping with other options
-.\setup_strangeloop.ps1 -SkipPrerequisites -UserName "Your Name" -Verbose
-
-# Maintenance mode with skipped prerequisites
-.\setup_strangeloop.ps1 -MaintenanceMode -SkipPrerequisites
-
-# Verbose mode for troubleshooting
-.\setup_strangeloop.ps1 -Verbose
+```powershell
+# The script will automatically:
+# 1. Show ALL available loops with platform indicators [WSL], [Win], [Any]
+# 2. After you select a loop, it derives the environment:
+#    - WSL-required loops (python-mcp-server, flask-linux) → Force WSL
+#    - Windows-only loops (ads-snr-basic, asp-dotnet-framework-api) → Force Windows
+#    - Universal loops (python-cli) → Let you choose if WSL is available
+# 3. Always check prerequisites and install latest packages for reliability
 ```
 
 ### For Testing/Development
 ```powershell
-# Reset all changes (for testing/troubleshooting)
+# 🔄 SAFE RESET - Remove only setup changes (keeps your projects)
 .\reset_strangeloop.ps1
 
-# Reset with options
-.\reset_strangeloop.ps1 -KeepWSL -KeepGit    # Keep WSL and Git settings
-.\reset_strangeloop.ps1 -WhatIf              # See what would be reset
-.\reset_strangeloop.ps1 -Force               # Skip confirmation prompts
+# Preview what would be reset (no actual changes)
+.\reset_strangeloop.ps1 -WhatIf
+
+# Force reset without prompts
+.\reset_strangeloop.ps1 -Force
+
+# Download reset script directly from GitHub
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
+.\reset_strangeloop.ps1
 ```
 
 ## 🛠️ Development Workflow
 
 ### For Script Maintainers
-1. **Edit Scripts**: Make changes to setup scripts in this repository
-2. **Test Remotely**: Test with GitHub URLs after pushing changes
-3. **Deploy**: Scripts are immediately available via GitHub raw URLs
-4. **Validate**: Test deployment with the main launcher script from different locations
+1. **Single File Development**: All functionality is in `setup_strangeloop.ps1`
+2. **Test Locally**: Test the script directly - completely standalone
+3. **Legacy Cleanup**: Platform scripts no longer used or maintained
+4. **Simple Deployment**: Just push changes to GitHub - immediately available
 
-### For Repository Updates
-1. **Update URLs**: Modify paths in `setup_strangeloop.ps1` if repository structure changes
-2. **Update Documentation**: Keep deployment guides current
-3. **Test Deployment**: Validate with test scripts before sharing with users
+### Architecture Benefits
+- ✅ **Zero Configuration**: No parameters needed - just run the script
+- ✅ **Always Reliable**: Prerequisites and packages always checked and updated
+- ✅ **Maximum Simplicity**: No complex options, modes, or external dependencies
+- ✅ **Smart Environment Detection**: Derives WSL/Windows from loop selection
+- ✅ **Consistent Experience**: Same setup flow for all users
+- ✅ **Clean Output**: No prefixes or verbose logging - clear, simple messages
+- ✅ **Up-to-date Packages**: Ensures latest versions are installed
+- ✅ **Minimalist Design**: Only 1 optional parameter for maximum simplicity
 
 ## 🔧 Platform Support
 
@@ -191,6 +208,19 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 
 ## 🚨 Troubleshooting
 
+### Quick Reset (Start Fresh)
+If you encounter issues or want to clean up setup changes:
+```powershell
+# 🔄 SAFE RESET - Download and run reset script
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
+.\reset_strangeloop.ps1
+
+# Or if you have the repository locally
+.\reset_strangeloop.ps1 -Force
+```
+
+**The reset script is SAFE** - it only removes setup-related changes and preserves all your projects and work.
+
 ### Download Issues
 - Check internet connection and GitHub access
 - Verify URLs in deployment documentation
@@ -205,13 +235,22 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ### Reset Everything (Start Over)
 If you encounter issues or want to start fresh:
 ```powershell
-# Download and run reset script
+# 🔄 RECOMMENDED - Safe reset (preserves your projects)
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"
 .\reset_strangeloop.ps1
+
+# Preview what would be reset
+.\reset_strangeloop.ps1 -WhatIf
 
 # Or if you have the repository locally
 .\reset_strangeloop.ps1 -Force
 ```
+
+**✅ Safe Reset Features:**
+- Only removes setup-related changes (temp files, execution policy)
+- **Preserves all your StrangeLoop projects and work**
+- Does not uninstall StrangeLoop CLI or affect user data
+- Perfect for troubleshooting without losing your work
 
 ### Common Setup Issues
 - WSL installation may require system restart
@@ -221,18 +260,27 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
 
 ## 📋 File Descriptions
 
-| File | Purpose | User Facing |
-|------|---------|-------------|
-| `setup_strangeloop.ps1` | Main launcher | ✅ Download & Run |
-| `reset_strangeloop.ps1` | Reset script | 🔄 Troubleshooting |
-| `scripts/strangeloop_main.ps1` | Orchestrator | 🔄 Auto-downloaded |
-| `scripts/strangeloop_linux.ps1` | Linux setup | 🔄 Auto-downloaded |
-| `scripts/strangeloop_windows.ps1` | Windows setup | 🔄 Auto-downloaded |
-| `docs/user_guide.md` | User guide | 📚 Documentation |
-| `docs/deployment_guide.md` | Deployment guide | 📚 Documentation |
+| File | Purpose | User Facing | Architecture |
+|------|---------|-------------|-------------|
+| `setup_strangeloop.ps1` | Complete unified setup | ✅ Download & Run | **Minimalist (no parameters)** |
+| `reset_strangeloop.ps1` | **SAFE RESET - Remove setup changes only** | 🔄 **Essential for troubleshooting** | **Project-safe cleanup** |
+| `scripts/strangeloop_linux.ps1` | Linux-specific logic | �️ Legacy/Unused | Platform-specific |
+| `scripts/strangeloop_windows.ps1` | Windows-specific logic | �️ Legacy/Unused | Platform-specific |
+| `docs/user_guide.md` | User guide | 📚 Documentation | Documentation |
+| `docs/deployment_guide.md` | Deployment guide | 📚 Documentation | Documentation |
+
+### Key Changes in Single Script Architecture
+- ❌ **Removed**: All parameters - now completely parameterless
+- ❌ **Removed**: Download functionality and platform script dependencies
+- ❌ **Removed**: Logging prefixes and complex output formatting
+- ❌ **Removed**: External file dependencies and modular architecture
+- ✅ **Enhanced**: True single-script design - completely standalone
+- ✅ **Simplified**: Clean, prefix-free output for better user experience
+- ✅ **Streamlined**: Fixed Windows settings.yaml update logic
 
 ---
-**Version**: 2.0 (Standalone Architecture)  
+**Version**: 6.1 (Single Script Architecture)  
 **Created**: August 2025  
 **Author**: Sakr Omera/Bing Ads Teams Egypt  
-**Repository**: GitHub - sakerMS/strangeloop-bootstrap
+**Repository**: GitHub - sakerMS/strangeloop-bootstrap  
+**Architecture**: Single standalone script with zero dependencies
