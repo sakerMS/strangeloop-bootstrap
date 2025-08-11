@@ -238,10 +238,43 @@ if (Test-Command "strangeloop") {
         Write-Info "Current version: $version"
     }
 } else {
-    Write-Info "StrangeLoop CLI not found - installation will be required"
-    Write-Warning "Please install StrangeLoop CLI manually and run this script again"
-    Write-Info "Installation instructions: https://github.com/your-org/strangeloop"
-    exit 1
+    Write-Info "StrangeLoop CLI not found - installing now..."
+    try {
+        # Download if not exists
+        if (-not (Test-Path "strangeloop.msi")) {
+            Write-Info "Downloading StrangeLoop CLI from Azure DevOps..."
+            az artifacts universal download --organization "https://msasg.visualstudio.com/" --project "Bing_Ads" --scope project --feed "strangeloop" --name "strangeloop-x86" --version "*" --path . --only-show-errors
+        }
+        
+        # Install
+        Write-Info "Starting StrangeLoop installer (please complete manually)..."
+        Start-Process "strangeloop.msi" -Wait
+        
+        # Cleanup
+        Remove-Item "strangeloop.msi" -Force -ErrorAction SilentlyContinue
+        
+        # Refresh PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        
+        if (Test-Command "strangeloop") {
+            Write-Success "StrangeLoop installed successfully"
+            $version = strangeloop --version 2>$null
+            if ($version) {
+                Write-Info "Installed version: $version"
+            }
+        } else {
+            Write-Warning "StrangeLoop installation may require terminal restart"
+            Write-Info "Please restart your terminal and run this script again"
+            exit 1
+        }
+    } catch {
+        Write-Error "StrangeLoop installation failed: $($_.Exception.Message)"
+        Write-Info "Please install StrangeLoop CLI manually:"
+        Write-Info "1. Run: az artifacts universal download --organization 'https://msasg.visualstudio.com/' --project 'Bing_Ads' --scope project --feed 'strangeloop' --name 'strangeloop-x86' --version '*' --path ."
+        Write-Info "2. Run the downloaded strangeloop.msi installer"
+        Write-Info "3. Restart your terminal and run this script again"
+        exit 1
+    }
 }
 
 #endregion
