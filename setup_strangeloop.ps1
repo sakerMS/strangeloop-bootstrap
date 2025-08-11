@@ -890,11 +890,11 @@ try {
                 # Provide access instructions
                 Write-Info "`nTo access your project:"
                 Write-Host "  WSL: cd '$appDirResolved'" -ForegroundColor Yellow
-                Write-Host "  Windows: \\wsl.localhost\$wslDistro$appDirResolved" -ForegroundColor Yellow
+                Write-Host "  Windows: \\wsl.localhost\$ubuntuDistro$appDirResolved" -ForegroundColor Yellow
                 Write-Host "  VS Code: code '$appDirResolved' (from WSL terminal)" -ForegroundColor Yellow
 
                 # Open VS Code for the initialized project in WSL
-                Open-VSCode -Path $appDirResolved -IsWSL:$true -Distribution $wslDistro
+                Open-VSCode -Path $appDirResolved -IsWSL:$true -Distribution $ubuntuDistro
             } else {
                 Write-Error "Loop initialization failed in WSL"
                 exit 1
