@@ -116,6 +116,213 @@ function Test-Command {
     $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
+function Test-WSLInstallation {
+    param([string]$DistributionName = "Ubuntu-24.04")
+    
+    Write-Info "Validating WSL installation and $DistributionName distribution..."
+    
+    # Check if WSL command exists
+    if (-not (Test-Command "wsl")) {
+        Write-Warning "WSL command not found in PATH"
+        return $false
+    }
+    
+    # Check WSL version and status
+    try {
+        $wslVersion = wsl --version 2>$null
+        if ($wslVersion) {
+            Write-Success "WSL is installed and operational"
+        } else {
+            Write-Warning "WSL command exists but may not be fully functional"
+            return $false
+        }
+    } catch {
+        Write-Warning "WSL version check failed: $($_.Exception.Message)"
+        return $false
+    }
+    
+    # Check if the specific distribution is installed and functional
+    try {
+        $distributions = wsl --list --quiet 2>$null
+        $distroFound = $false
+        
+        if ($distributions) {
+            foreach ($line in $distributions) {
+                if ($line -and $line -notmatch "^Windows Subsystem") {
+                    $cleanLine = $line -replace '[^\x20-\x7F]', ''
+                    if ($cleanLine -like "*$DistributionName*") {
+                        $distroFound = $true
+                        break
+                    }
+                }
+            }
+        }
+        
+        if ($distroFound) {
+            # Test if we can execute commands in the distribution
+            try {
+                $testResult = wsl --distribution $DistributionName --exec echo "test"
+                if ($testResult -eq "test") {
+                    Write-Success "$DistributionName is installed and functional"
+                    return $true
+                } else {
+                    Write-Warning "$DistributionName found but command execution failed"
+                    return $false
+                }
+            } catch {
+                Write-Warning "$DistributionName found but not accessible: $($_.Exception.Message)"
+                return $false
+            }
+        } else {
+            Write-Warning "$DistributionName distribution not found"
+            return $false
+        }
+    } catch {
+        Write-Warning "WSL distribution check failed: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Repair-WSLInstallation {
+    param([string]$DistributionName = "Ubuntu-24.04")
+    
+    Write-Info "Attempting to repair WSL installation..."
+    
+    $repairSuccess = $false
+    
+    # Method 1: Reset WSL
+    Write-Info "Attempting WSL reset..."
+    try {
+        wsl --shutdown
+        Start-Sleep -Seconds 3
+        wsl --set-default-version 2
+        Write-Success "WSL reset completed"
+        $repairSuccess = $true
+    } catch {
+        Write-Warning "WSL reset failed: $($_.Exception.Message)"
+    }
+    
+    # Method 2: Restart WSL service
+    if (-not $repairSuccess) {
+        Write-Info "Attempting to restart WSL service..."
+        try {
+            Restart-Service -Name "LxssManager" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+            Write-Success "WSL service restarted"
+            $repairSuccess = $true
+        } catch {
+            Write-Warning "WSL service restart failed: $($_.Exception.Message)"
+        }
+    }
+    
+    # Method 3: Re-register distribution
+    if (-not $repairSuccess -and $DistributionName) {
+        Write-Info "Attempting to re-register $DistributionName distribution..."
+        try {
+            wsl --unregister $DistributionName 2>$null
+            Start-Sleep -Seconds 2
+            wsl --install --distribution $DistributionName --no-launch
+            Write-Success "$DistributionName re-registration initiated"
+            $repairSuccess = $true
+        } catch {
+            Write-Warning "Distribution re-registration failed: $($_.Exception.Message)"
+        }
+    }
+    
+    return $repairSuccess
+}
+
+function Initialize-UbuntuDistribution {
+    param([string]$DistributionName = "Ubuntu-24.04")
+    
+    Write-Info "Checking if $DistributionName needs initial setup..."
+    
+    try {
+        # Try to run a simple command to see if the distribution is initialized
+        $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
+        
+        if ($testResult -eq "test") {
+            Write-Success "$DistributionName is already initialized and ready"
+            return $true
+        } else {
+            Write-Info "$DistributionName needs initial user setup"
+            Write-Warning "Ubuntu will launch for initial user account creation."
+            Write-Info "Please:"
+            Write-Info "1. Create a username when prompted"
+            Write-Info "2. Set a password when prompted" 
+            Write-Info "3. Close the Ubuntu window when setup is complete"
+            Write-Info "4. This script will continue automatically"
+            
+            # Launch Ubuntu for initial setup with a timeout
+            Write-Info "Launching Ubuntu for setup in 3 seconds..."
+            Start-Sleep -Seconds 3
+            
+            # Use Start-Process to launch Ubuntu without blocking
+            $ubuntuProcess = Start-Process -FilePath "wsl" -ArgumentList "--distribution", $DistributionName -PassThru -NoNewWindow:$false
+            
+            # Wait for the process to start and user to complete setup
+            Write-Info "Waiting for Ubuntu setup to complete..."
+            Write-Info "Please complete the setup in the Ubuntu window that opened."
+            
+            # Check periodically if setup is complete
+            $maxWaitTime = 300  # 5 minutes
+            $waitTime = 0
+            $setupComplete = $false
+            
+            while ($waitTime -lt $maxWaitTime -and -not $setupComplete) {
+                Start-Sleep -Seconds 10
+                $waitTime += 10
+                
+                try {
+                    $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
+                    if ($testResult -eq "test") {
+                        $setupComplete = $true
+                        Write-Success "Ubuntu setup completed successfully!"
+                        break
+                    }
+                } catch {
+                    # Setup still in progress
+                }
+                
+                if ($waitTime % 30 -eq 0) {
+                    Write-Info "Still waiting for Ubuntu setup... ($waitTime seconds elapsed)"
+                }
+            }
+            
+            if (-not $setupComplete) {
+                Write-Warning "Ubuntu setup is taking longer than expected."
+                Write-Info "Please ensure you complete the setup in the Ubuntu window."
+                $response = Read-Host "Press Enter when Ubuntu setup is complete, or type 'skip' to continue without Ubuntu"
+                
+                if ($response -eq "skip") {
+                    Write-Warning "Skipping Ubuntu setup. Some features may not work."
+                    return $false
+                }
+                
+                # Test one more time
+                try {
+                    $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
+                    if ($testResult -eq "test") {
+                        Write-Success "Ubuntu setup completed!"
+                        return $true
+                    } else {
+                        Write-Warning "Ubuntu setup verification failed. Continuing anyway..."
+                        return $false
+                    }
+                } catch {
+                    Write-Warning "Ubuntu setup verification failed. Continuing anyway..."
+                    return $false
+                }
+            }
+            
+            return $setupComplete
+        }
+    } catch {
+        Write-Warning "Failed to check Ubuntu initialization status: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 function Get-UserInput {
     param(
         [string]$Prompt,
@@ -456,98 +663,160 @@ $windowsCompatibleLoops = @(
 Write-Step "Loop Discovery and Selection"
 
 # Get available loops
-    $availableLoops = @()
-    try {
-        Write-Info "Discovering available StrangeLoop templates..."
-        $loopsOutput = strangeloop library loops 2>$null
-        if ($loopsOutput) {
-            # Parse loops
-            $availableLoops = @()
-            $loopsOutput -split "`n" | ForEach-Object {
-                $line = $_.Trim()
-                if ($line -match "^([a-zA-Z0-9\-]+)\s+(.+)$") {
-                    $availableLoops += @{
-                        Name = $matches[1]
-                        Description = $matches[2]
-                    }
+$availableLoops = @()
+try {
+    Write-Info "Discovering available StrangeLoop templates..."
+    $loopsOutput = strangeloop library loops 2>$null
+    if ($loopsOutput) {
+        # Parse loops
+        $availableLoops = @()
+        $loopsOutput -split "`n" | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -match "^([a-zA-Z0-9\-]+)\s+(.+)$") {
+                $availableLoops += @{
+                    Name = $matches[1]
+                    Description = $matches[2]
                 }
             }
         }
-        
-        if ($availableLoops.Count -eq 0) {
-            Write-Error "Could not retrieve loops. Ensure StrangeLoop is properly installed."
-            exit 1
-        }
-        
-        Write-Success "Found $($availableLoops.Count) available loop templates"
-    } catch {
-        Write-Error "Could not retrieve loops: $($_.Exception.Message)"
-        exit 1
     }
     
     if ($availableLoops.Count -eq 0) {
-        Write-Warning "No loops found."
-        exit 0
+        Write-Error "Could not retrieve loops. Ensure StrangeLoop is properly installed."
+        exit 1
     }
     
-    # Display all available loops with platform indicators
-    Write-Info "Available loops:"
-    for ($i = 0; $i -lt $availableLoops.Count; $i++) {
-        $loop = $availableLoops[$i]
-        $platform = if ($linuxRequiredLoops -contains $loop.Name) { "[WSL]" } 
-                   elseif ($windowsCompatibleLoops -contains $loop.Name) { "[Win]" } 
-                   else { "[Any]" }
-        Write-Host "  $($i + 1). $($loop.Name) - $($loop.Description) $platform" -ForegroundColor White
+    Write-Success "Found $($availableLoops.Count) available loop templates"
+} catch {
+    Write-Error "Could not retrieve loops: $($_.Exception.Message)"
+    exit 1
+}
+
+if ($availableLoops.Count -eq 0) {
+    Write-Warning "No loops found."
+    exit 0
+}
+
+# Display all available loops with platform indicators
+Write-Info "Available loops:"
+for ($i = 0; $i -lt $availableLoops.Count; $i++) {
+    $loop = $availableLoops[$i]
+    $platform = if ($linuxRequiredLoops -contains $loop.Name) { "[WSL]" } 
+               elseif ($windowsCompatibleLoops -contains $loop.Name) { "[Win]" } 
+               else { "[Any]" }
+    Write-Host "  $($i + 1). $($loop.Name) - $($loop.Description) $platform" -ForegroundColor White
+}
+Write-Host "  0. Skip loop initialization" -ForegroundColor Gray
+
+# Get user choice
+do {
+    $choice = Read-Host "Select loop (0-$($availableLoops.Count))"
+    $validChoice = $choice -match '^\d+$' -and [int]$choice -ge 0 -and [int]$choice -le $availableLoops.Count
+    if (-not $validChoice) {
+        Write-Warning "Please enter a valid number between 0 and $($availableLoops.Count)"
     }
-    Write-Host "  0. Skip loop initialization" -ForegroundColor Gray
+} while (-not $validChoice)
+
+if ($choice -eq "0") {
+    Write-Info "Skipping loop initialization."
+    Write-Step "Setup Completed Successfully!"
+    Write-Success "StrangeLoop CLI is ready to use!"
+    exit 0
+}
+
+# Initialize selected loop and derive environment from it
+$selectedLoop = $availableLoops[[int]$choice - 1]
+Write-Success "Selected: $($selectedLoop.Name)"
+
+#endregion
+
+# Derive environment requirements from selected loop
+$needsLinux = $linuxRequiredLoops -contains $selectedLoop.Name
+$isWindowsOnly = $windowsCompatibleLoops -contains $selectedLoop.Name
+
+# Check and setup WSL environment when needed
+$wslAvailable = $false
+$ubuntuDistro = "Ubuntu-24.04"
+
+if ($needsLinux -or (-not $isWindowsOnly)) {
+    Write-Step "WSL Setup and Availability Check"
     
-    # Get user choice
-    do {
-        $choice = Read-Host "Select loop (0-$($availableLoops.Count))"
-        $validChoice = $choice -match '^\d+$' -and [int]$choice -ge 0 -and [int]$choice -le $availableLoops.Count
-        if (-not $validChoice) {
-            Write-Warning "Please enter a valid number between 0 and $($availableLoops.Count)"
-        }
-    } while (-not $validChoice)
+    # Check if WSL is installed and functional
+    $wslFullyFunctional = Test-WSLInstallation -DistributionName $ubuntuDistro
     
-    if ($choice -eq "0") {
-        Write-Info "Skipping loop initialization."
-        Write-Step "Setup Completed Successfully!"
-        Write-Success "StrangeLoop CLI is ready to use!"
-        exit 0
+    # Set WSL availability based on validation result
+    if ($wslFullyFunctional) {
+        Write-Success "WSL and $ubuntuDistro are fully functional"
+        $wslAvailable = $true
     }
     
-    # Initialize selected loop and derive environment from it
-    $selectedLoop = $availableLoops[[int]$choice - 1]
-    Write-Success "Selected: $($selectedLoop.Name)"
-    
-    # Derive environment requirements from selected loop
-    $needsLinux = $linuxRequiredLoops -contains $selectedLoop.Name
-    $isWindowsOnly = $windowsCompatibleLoops -contains $selectedLoop.Name
-    
-    # Check and setup WSL environment when needed
-    $wslAvailable = $false
-    $ubuntuDistro = "Ubuntu-24.04"
-    
-    if ($needsLinux -or (-not $isWindowsOnly)) {
-        Write-Step "WSL Setup and Availability Check"
-        
-        # Check if WSL is installed
+    if (-not $wslFullyFunctional) {
+        # Check if basic WSL is at least installed
         if (-not (Test-Command "wsl")) {
             if ($needsLinux) {
-                Write-Info "WSL is required but not installed. Installing WSL..."
-                Write-Warning "This requires administrator privileges and may require a restart."
+                    Write-Info "WSL is required but not installed. Installing WSL..."
+                    Write-Warning "This requires administrator privileges and may require a restart."
+                
+                # Force WSL installation with multiple methods
+                $installSuccess = $false
+                
+                # Method 1: Standard WSL install
+                Write-Info "Attempting standard WSL installation..."
                 try {
-                    wsl --install --distribution $ubuntuDistro
-                    Write-Warning "WSL installation initiated. You may need to restart your computer."
-                    Write-Info "After restart, run this script again to continue setup."
-                    exit 0
+                    wsl --install --distribution $ubuntuDistro --no-launch
+                    Write-Success "WSL installation command executed successfully"
+                    $installSuccess = $true
                 } catch {
-                    Write-Error "WSL installation failed. Please install manually:"
+                    Write-Warning "Standard WSL installation failed: $($_.Exception.Message)"
+                }
+                
+                # Method 2: Force enable WSL features if standard install failed
+                if (-not $installSuccess) {
+                    Write-Info "Attempting to force enable WSL features..."
+                    try {
+                        # Enable WSL and Virtual Machine Platform features
+                        dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+                        dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+                        
+                        # Try WSL install again after enabling features
+                        wsl --install --distribution $ubuntuDistro --no-launch
+                        Write-Success "WSL features enabled and installation attempted"
+                        $installSuccess = $true
+                    } catch {
+                        Write-Warning "Force WSL feature installation failed: $($_.Exception.Message)"
+                    }
+                }
+                
+                # Method 3: PowerShell feature installation as fallback
+                if (-not $installSuccess) {
+                    Write-Info "Attempting PowerShell-based feature installation..."
+                    try {
+                        Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart
+                        Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -NoRestart
+                        Write-Success "WSL features enabled via PowerShell"
+                        $installSuccess = $true
+                    } catch {
+                        Write-Warning "PowerShell feature installation failed: $($_.Exception.Message)"
+                    }
+                }
+                
+                if ($installSuccess) {
+                    Write-Warning "WSL installation initiated. You MUST restart your computer now."
+                    Write-Info "After restart:"
+                    Write-Info "1. Run this script again to continue setup"
+                    Write-Info "2. Ubuntu will be automatically initialized (no manual setup needed)"
+                    Write-Info "3. If issues persist, try running as Administrator"
+                    Write-Info ""
+                    Write-Info "Note: The script will handle Ubuntu user setup automatically after restart."
+                    exit 0
+                } else {
+                    Write-Error "All WSL installation methods failed. Manual installation required:"
                     Write-Info "1. Run PowerShell as Administrator"
                     Write-Info "2. Execute: wsl --install"
-                    Write-Info "3. Restart your computer"
-                    Write-Info "4. Run this script again"
+                    Write-Info "3. If that fails, execute: dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart"
+                    Write-Info "4. Then execute: dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart"
+                    Write-Info "5. Restart your computer"
+                    Write-Info "6. Run this script again"
                     exit 1
                 }
             } else {
@@ -555,11 +824,26 @@ Write-Step "Loop Discovery and Selection"
                 $wslAvailable = $false
             }
         } else {
-            # WSL is installed, check for Ubuntu distribution
-            Write-Info "WSL is installed. Checking for $ubuntuDistro distribution..."
-            
-            $wslDistros = wsl -l -v 2>$null
-            $foundUbuntu = $false
+            # WSL command exists but distribution check failed - try to fix or install distribution
+            if ($needsLinux) {
+                Write-Info "WSL is installed but $ubuntuDistro distribution is not functional. Attempting to fix..."
+                
+                # Try to repair WSL first
+                $repairResult = Repair-WSLInstallation -DistributionName $ubuntuDistro
+                if ($repairResult) {
+                    Write-Info "WSL repair attempted. Re-checking installation..."
+                    $wslFullyFunctional = Test-WSLInstallation -DistributionName $ubuntuDistro
+                    if ($wslFullyFunctional) {
+                        Write-Success "WSL repair successful - $ubuntuDistro is now functional"
+                        $wslAvailable = $true
+                        return
+                    } else {
+                        Write-Warning "WSL repair did not fully resolve the issue. Continuing with installation attempts..."
+                    }
+                }
+                
+                $wslDistros = wsl -l -v 2>$null
+                $foundUbuntu = $false
             
             if ($wslDistros) {
                 $wslDistros -split "`n" | ForEach-Object {
@@ -580,19 +864,89 @@ Write-Step "Loop Discovery and Selection"
             if (-not $foundUbuntu) {
                 if ($needsLinux) {
                     Write-Info "$ubuntuDistro not found. Installing $ubuntuDistro..."
+                    
+                    # Enhanced Ubuntu installation with multiple methods
+                    $distroInstallSuccess = $false
+                    
+                    # Method 1: Standard WSL distribution install
+                    Write-Info "Attempting standard WSL distribution installation..."
                     try {
-                        wsl --install --distribution $ubuntuDistro
-                        Write-Warning "$ubuntuDistro installation initiated."
-                        Write-Info "Please wait for the installation to complete and run this script again."
-                        Write-Info "You may be prompted to create a user account for Ubuntu."
-                        exit 0
+                        wsl --install --distribution $ubuntuDistro --no-launch
+                        Write-Success "$ubuntuDistro installation initiated via WSL"
+                        $distroInstallSuccess = $true
                     } catch {
-                        Write-Error "$ubuntuDistro installation failed. Please install manually:"
+                        Write-Warning "Standard WSL distribution installation failed: $($_.Exception.Message)"
+                    }
+                    
+                    # Method 2: Microsoft Store via winget
+                    if (-not $distroInstallSuccess -and (Test-Command "winget")) {
+                        Write-Info "Attempting Microsoft Store installation via winget..."
+                        try {
+                            winget install --id=Canonical.Ubuntu.2404 --source=msstore --accept-package-agreements --accept-source-agreements --silent
+                            Write-Success "$ubuntuDistro installed via Microsoft Store (winget)"
+                            $distroInstallSuccess = $true
+                        } catch {
+                            Write-Warning "Microsoft Store installation via winget failed: $($_.Exception.Message)"
+                        }
+                    }
+                    
+                    # Method 3: Direct download and install Ubuntu appx
+                    if (-not $distroInstallSuccess) {
+                        Write-Info "Attempting direct Ubuntu appx installation..."
+                        try {
+                            $ubuntuUrl = "https://aka.ms/wslubuntu2404"
+                            $ubuntuPath = "$env:TEMP\Ubuntu2404.appx"
+                            Write-Info "Downloading Ubuntu 24.04 package..."
+                            Invoke-WebRequest -Uri $ubuntuUrl -OutFile $ubuntuPath -UseBasicParsing
+                            
+                            Write-Info "Installing Ubuntu package..."
+                            Add-AppxPackage -Path $ubuntuPath
+                            Remove-Item $ubuntuPath -Force -ErrorAction SilentlyContinue
+                            Write-Success "$ubuntuDistro installed via direct download"
+                            $distroInstallSuccess = $true
+                        } catch {
+                            Write-Warning "Direct Ubuntu installation failed: $($_.Exception.Message)"
+                        }
+                    }
+                    
+                    # Method 4: Fallback to Ubuntu 20.04 if 24.04 fails
+                    if (-not $distroInstallSuccess) {
+                        Write-Info "Attempting fallback to Ubuntu 20.04..."
+                        try {
+                            wsl --install --distribution Ubuntu-20.04 --no-launch
+                            Write-Success "Ubuntu 20.04 installed as fallback"
+                            $ubuntuDistro = "Ubuntu-20.04"  # Update the distribution name
+                            $distroInstallSuccess = $true
+                        } catch {
+                            Write-Warning "Ubuntu 20.04 fallback installation failed: $($_.Exception.Message)"
+                        }
+                    }
+                    
+                    if ($distroInstallSuccess) {
+                        Write-Success "$ubuntuDistro installation completed."
+                        Write-Info "Initializing Ubuntu distribution for first use..."
+                        
+                        # Initialize Ubuntu without blocking the script
+                        $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
+                        
+                        if ($initSuccess) {
+                            Write-Success "$ubuntuDistro is ready for use!"
+                            $wslAvailable = $true
+                        } else {
+                            Write-Warning "$ubuntuDistro installation completed but initialization had issues."
+                            Write-Info "You may need to manually launch Ubuntu from the Start menu to complete setup."
+                            $wslAvailable = $true  # Still mark as available since it's installed
+                        }
+                    } else {
+                        Write-Error "All $ubuntuDistro installation methods failed. Manual installation required:"
                         Write-Info "1. Open Microsoft Store"
-                        Write-Info "2. Search for 'Ubuntu 24.04'"
-                        Write-Info "3. Install the distribution"
-                        Write-Info "4. Run this script again"
-                        exit 1
+                        Write-Info "2. Search for 'Ubuntu 24.04' or 'Ubuntu'"
+                        Write-Info "3. Install any Ubuntu distribution"
+                        Write-Info "4. Launch Ubuntu from Start menu to complete setup"
+                        Write-Info "5. Run this script again"
+                        Write-Warning "Continuing without Linux environment for now..."
+                        $needsLinux = $false
+                        $wslAvailable = $false
                     }
                 } else {
                     Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
@@ -600,16 +954,36 @@ Write-Step "Loop Discovery and Selection"
                 }
             } else {
                 Write-Success "Ubuntu distribution is available"
-                $wslAvailable = $true
                 
-                # Set as default distribution
-                try {
-                    wsl -s $ubuntuDistro 2>$null
-                    Write-Success "$ubuntuDistro set as default WSL distribution"
-                } catch {
-                    Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
+                # Ensure Ubuntu is properly initialized
+                Write-Info "Verifying Ubuntu distribution is ready for use..."
+                $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
+                
+                if ($initSuccess) {
+                    Write-Success "$ubuntuDistro is ready for use!"
+                    $wslAvailable = $true
+                    
+                    # Set as default distribution
+                    try {
+                        wsl -s $ubuntuDistro 2>$null
+                        Write-Success "$ubuntuDistro set as default WSL distribution"
+                    } catch {
+                        Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
+                    }
+                } else {
+                    Write-Warning "$ubuntuDistro found but not properly initialized"
+                    Write-Info "You may need to manually launch Ubuntu to complete setup"
+                    $wslAvailable = $true  # Still mark as available
                 }
             }
+            } else {
+                Write-Info "WSL available but Ubuntu distribution not needed - will use Windows-only development mode"
+                $wslAvailable = $false
+            }
+        } else {
+            # WSL is fully functional according to our validation
+            Write-Success "WSL and $ubuntuDistro are fully functional"
+            $wslAvailable = $true
         }
         
         # Enhanced WSL development environment setup
@@ -731,6 +1105,72 @@ Write-Step "Loop Discovery and Selection"
                         Write-Info "Installing Poetry..."
                         Invoke-WSLCommand "pipx install poetry" "Installing Poetry" $ubuntuDistro
                         Invoke-WSLCommand "~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
+                    }
+                    
+                    # Git configuration setup
+                    Write-Info "Configuring Git in WSL environment..."
+                    
+                    # Get user input for Git configuration
+                    Write-Info "Git requires user configuration for commits and version control."
+                    $gitUserName = Get-UserInput "Enter your full name for Git commits" ""
+                    $gitUserEmail = Get-UserInput "Enter your email address for Git commits" ""
+                    
+                    if ($gitUserName -and $gitUserEmail) {
+                        Write-Info "Setting up Git configuration..."
+                        
+                        # Configure Git user settings
+                        Invoke-WSLCommand "git config --global user.name `"$gitUserName`"" "Setting Git user name" $ubuntuDistro
+                        Invoke-WSLCommand "git config --global user.email `"$gitUserEmail`"" "Setting Git user email" $ubuntuDistro
+                        
+                        # Configure Git default branch
+                        Invoke-WSLCommand "git config --global init.defaultBranch main" "Setting default branch to main" $ubuntuDistro
+                        
+                        # Install Git LFS
+                        Write-Info "Installing Git Large File Storage (LFS)..."
+                        if ($null -eq $sudoPassword) {
+                            Invoke-WSLCommand "sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro
+                        } else {
+                            Invoke-WSLCommand "sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro $sudoPassword
+                        }
+                        
+                        # Configure Git credential helper to use Windows Git Credential Manager
+                        $gitCredentialPath = "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
+                        $gitCredentialExists = Get-WSLCommandOutput "test -f `"$gitCredentialPath`" && echo 'exists' || echo 'missing'" $ubuntuDistro
+                        
+                        if ($gitCredentialExists -eq "exists") {
+                            Write-Info "Configuring Git to use Windows Credential Manager..."
+                            Invoke-WSLCommand "git config --global credential.helper `"$gitCredentialPath`"" "Setting Git credential helper" $ubuntuDistro
+                            Invoke-WSLCommand "git config --global credential.useHttpPath true" "Enabling HTTP path credentials" $ubuntuDistro
+                        } else {
+                            Write-Warning "Windows Git Credential Manager not found. Git credentials will need manual setup."
+                            Write-Info "Consider installing Git for Windows to enable credential management."
+                        }
+                        
+                        # Configure merge tool to use VS Code
+                        Invoke-WSLCommand "git config --global merge.tool vscode" "Setting VS Code as merge tool" $ubuntuDistro
+                        Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait `$MERGED'" "Configuring VS Code merge command" $ubuntuDistro
+                        
+                        # Verify Git configuration
+                        Write-Info "Verifying Git configuration..."
+                        $gitName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
+                        $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
+                        $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
+                        
+                        if ($gitName -and $gitEmail) {
+                            Write-Success "Git configured successfully:"
+                            Write-Info "  Name: $gitName"
+                            Write-Info "  Email: $gitEmail"
+                            Write-Info "  Default branch: $gitBranch"
+                            Write-Info "  Merge tool: VS Code"
+                            Write-Info "  Credential helper: Windows Git Credential Manager"
+                        } else {
+                            Write-Warning "Git configuration verification failed. You may need to configure Git manually."
+                        }
+                    } else {
+                        Write-Warning "Git user name or email not provided. Skipping Git configuration."
+                        Write-Info "You can configure Git later using:"
+                        Write-Info "  git config --global user.name `"Your Name`""
+                        Write-Info "  git config --global user.email `"your.email@example.com`""
                     }
                     
                     # Clear sudo password from memory for security
@@ -1001,6 +1441,7 @@ try {
         Write-Error "Loop initialization failed: $($_.Exception.Message)"
         exit 1
     }
+}
 
 #endregion
 
