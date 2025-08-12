@@ -1011,36 +1011,100 @@ if (Test-Command "strangeloop") {
             az artifacts universal download --organization "https://msasg.visualstudio.com/" --project "Bing_Ads" --scope project --feed "strangeloop" --name "strangeloop-x86" --version "*" --path . --only-show-errors
         }
         
-        # Install
-        Write-Info "Starting StrangeLoop installer (please complete manually)..."
-        Start-Process "strangeloop.msi" -Wait
+        # Check if MSI was downloaded successfully
+        if (-not (Test-Path "strangeloop.msi")) {
+            throw "StrangeLoop MSI file was not downloaded successfully"
+        }
+        
+        # Try to install using msiexec with elevated privileges
+        Write-Info "Installing StrangeLoop CLI..."
+        Write-Host "Note: This installation requires administrator privileges and may prompt for elevation." -ForegroundColor Yellow
+        
+        try {
+            # Use msiexec for silent installation
+            $msiPath = (Get-Item "strangeloop.msi").FullName
+            $installArgs = @("/i", "`"$msiPath`"", "/quiet", "/norestart")
+            
+            # Try silent installation first
+            $process = Start-Process "msiexec.exe" -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
+            
+            if ($process.ExitCode -eq 0) {
+                Write-Success "StrangeLoop installed successfully (silent mode)"
+            } elseif ($process.ExitCode -eq 1603) {
+                # Exit code 1603 often indicates policy restrictions
+                throw "Installation blocked by Group Policy (Error 1603). Contact your system administrator."
+            } elseif ($process.ExitCode -eq 1260) {
+                # Exit code 1260 is the specific Group Policy block error
+                throw "Installation blocked by Group Policy (Error 1260). Contact your system administrator."
+            } else {
+                # Fall back to interactive installation
+                Write-Warning "Silent installation failed (Exit Code: $($process.ExitCode)). Trying interactive installation..."
+                Start-Process "msiexec.exe" -ArgumentList @("/i", "`"$msiPath`"") -Wait
+            }
+        } catch {
+            # If Group Policy is blocking, provide detailed guidance
+            if ($_.Exception.Message -match "1260|group policy|blocked") {
+                Write-Error "❌ Installation blocked by Group Policy"
+                Write-Host ""
+                Write-Host "🔒 Group Policy Restriction Detected" -ForegroundColor Red
+                Write-Host "This corporate environment blocks MSI installations." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "📋 Alternative Solutions:" -ForegroundColor Cyan
+                Write-Host "1. Contact your system administrator to:" -ForegroundColor White
+                Write-Host "   • Temporarily disable MSI execution restrictions" -ForegroundColor Gray
+                Write-Host "   • Add an exception for StrangeLoop CLI" -ForegroundColor Gray
+                Write-Host "   • Install StrangeLoop CLI centrally" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "2. Request IT to install StrangeLoop CLI manually" -ForegroundColor White
+                Write-Host ""
+                Write-Host "3. Use StrangeLoop via WSL (if available):" -ForegroundColor White
+                Write-Host "   • Some loops may work in WSL environment" -ForegroundColor Gray
+                Write-Host "   • This script will continue WSL setup" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "📁 MSI Location: $(Get-Item 'strangeloop.msi' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)" -ForegroundColor Green
+                Write-Host ""
+                
+                # Don't exit immediately - continue with WSL setup
+                Write-Warning "Continuing with WSL setup - some loops may still be available"
+                $global:StrangeLoopInstallFailed = $true
+            } else {
+                throw $_
+            }
+        }
         
         # Cleanup
         Remove-Item "strangeloop.msi" -Force -ErrorAction SilentlyContinue
         
-        # Refresh PATH
-        $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-        $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
-        $env:Path = $machinePath + ";" + $userPath
-        
-        if (Test-Command "strangeloop") {
-            Write-Success "StrangeLoop installed successfully"
-            $version = strangeloop --version 2>$null
-            if ($version) {
-                Write-Info "Installed version: $version"
+        # Only check for installation if we didn't hit Group Policy issues
+        if (-not $global:StrangeLoopInstallFailed) {
+            # Refresh PATH
+            $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+            $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+            $env:Path = $machinePath + ";" + $userPath
+            
+            if (Test-Command "strangeloop") {
+                Write-Success "StrangeLoop installed successfully"
+                $version = strangeloop --version 2>$null
+                if ($version) {
+                    Write-Info "Installed version: $version"
+                }
+            } else {
+                Write-Warning "StrangeLoop installation may require terminal restart"
+                Write-Info "Please restart your terminal and run this script again"
+                exit 1
             }
-        } else {
-            Write-Warning "StrangeLoop installation may require terminal restart"
-            Write-Info "Please restart your terminal and run this script again"
-            exit 1
         }
     } catch {
-        Write-Error "StrangeLoop installation failed: $($_.Exception.Message)"
-        Write-Info "Please install StrangeLoop CLI manually:"
-        Write-Info "1. Run: az artifacts universal download --organization 'https://msasg.visualstudio.com/' --project 'Bing_Ads' --scope project --feed 'strangeloop' --name 'strangeloop-x86' --version '*' --path ."
-        Write-Info "2. Run the downloaded strangeloop.msi installer"
-        Write-Info "3. Restart your terminal and run this script again"
-        exit 1
+        if ($_.Exception.Message -match "1260|group policy|blocked") {
+            # Already handled above
+        } else {
+            Write-Error "StrangeLoop installation failed: $($_.Exception.Message)"
+            Write-Info "Please install StrangeLoop CLI manually:"
+            Write-Info "1. Run: az artifacts universal download --organization 'https://msasg.visualstudio.com/' --project 'Bing_Ads' --scope project --feed 'strangeloop' --name 'strangeloop-x86' --version '*' --path ."
+            Write-Info "2. Run the downloaded strangeloop.msi installer"
+            Write-Info "3. Restart your terminal and run this script again"
+            exit 1
+        }
     }
 }
 
