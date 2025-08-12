@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.0 - Enhanced Enterprise         ║
+║                    Version 7.1 - Enhanced Enterprise         ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
