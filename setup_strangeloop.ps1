@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.1 - Enhanced Enterprise          ║
+║                    Version 7.2 - Enhanced Enterprise          ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -1880,13 +1880,14 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     # Pass the global variables to the WSL command
                     $gitUserEmail = $global:GitUserEmail
                     $gitUserName = $global:GitUserName
+                    $gitdefaultBranch = $global:GitDefaultBranch
 
                     Invoke-WSLCommand -Description "Configuring complete Git setup" -Distribution $ubuntuDistro -ScriptBlock {
                         # Configure Git user information using globally captured credentials
                         git config --global user.email "$gitUserEmail"
                         git config --global user.name "$gitUserName"
-                        git config --global init.defaultBranch "main"
-                        
+                        git config --global init.defaultBranch "$gitdefaultBranch"
+
                         # Install Git LFS
                         sudo apt-get install -y git-lfs
                         
@@ -1898,34 +1899,13 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         git config --global mergetool.vscode.cmd 'code --wait `$MERGED'
                     }
 
-                    # Verify Git configuration
-                    Write-Info "Verifying Git configuration..."
-                    $gitName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
-                    $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
-                    $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
-
-                                        $gitUserEmail = $global:GitUserEmail
-                    $gitUserName = $global:GitUserName
-                    Write-Info "  Name: $gitName"
-                    Write-Info "  Email: $gitEmail"
-
-                    Write-Info "  Name: $gitUserName"
-                    Write-Info "  Email: $gitUserEmail"
-
-                    Write-Info "  Name: $global:GitUserName"
-                    Write-Info "  Email: $global:GitUserEmail"
-                    
-                    Write-Info "  Default branch: $global:GitDefaultBranch"
-                    Write-Info "  Merge tool: $global:GitMergeTool"
-                    Write-Info "  Credential helper: $global:GitCredentialHelper"
-
-                    if ($gitName -and $gitEmail) {
+                    if ($gitUserName -and $gitUserEmail) {
                         Write-Success "Git configured successfully:"
-                        Write-Info "  Name: $gitName"
-                        Write-Info "  Email: $gitEmail"
-                        Write-Info "  Default branch: $gitBranch"
-                        Write-Info "  Merge tool: VS Code"
-                        Write-Info "  Credential helper: Windows Git Credential Manager"
+                        Write-Info "  Name: $gitUserName"
+                        Write-Info "  Email: $gitUserEmail"
+                        Write-Info "  Default branch: $gitdefaultBranch"
+                        Write-Info "  Merge tool: $gitMergeTool"
+                        Write-Info "  Credential helper: $gitCredentialHelper"
                     } else {
                         Write-Warning "Git configuration verification failed. You may need to configure Git manually."
                     }
