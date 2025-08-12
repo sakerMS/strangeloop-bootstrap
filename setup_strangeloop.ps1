@@ -1,7 +1,7 @@
 # StrangeLoop CLI Setup Script - Single Script Version
 # Complete standalone setup for StrangeLoop CLI development environment
 # 
-# Author: [Sakr Omera/Bing Ads Teams Egypt]
+# Author: [StrangeLoop Team]
 # Version: 6.1 - Single Script Architecture
 # Created: August 2025
 # 
@@ -768,6 +768,132 @@ foreach ($tool in $requiredTools) {
     }
 }
 
+# Configure Git for development
+if (Test-Command "git") {
+    Write-Step "Git Configuration"
+    
+    # Get current Git configuration
+    $currentEmail = git config --global user.email 2>$null
+    $currentName = git config --global user.name 2>$null
+    
+    # Prompt for Git user information with defaults from existing config
+    if ([string]::IsNullOrWhiteSpace($currentEmail)) {
+        $gitEmail = Get-UserInput "Enter your Git email address"
+    } else {
+        $gitEmail = Get-UserInput "Git email address" $currentEmail
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($currentName)) {
+        $gitName = Get-UserInput "Enter your Git display name"
+    } else {
+        $gitName = Get-UserInput "Git display name" $currentName
+    }
+    
+    # Configure Git settings
+    Write-Info "Configuring Git settings..."
+    git config --global user.email $gitEmail
+    git config --global user.name $gitName
+    git config --global init.defaultBranch "main"
+    
+    # Clear any existing credential helpers and set the correct one
+    git config --global --unset-all credential.helper 2>$null
+    
+    # Find and configure Git Credential Manager
+    $credentialManagerPaths = @(
+        "C:\Program Files\Git\mingw64\bin\git-credential-manager.exe",
+        "C:\Program Files\Git\mingw64\libexec\git-core\git-credential-manager.exe",
+        "C:\Program Files\Git\mingw64\libexec\git-core\git-credential-manager-core.exe"
+    )
+    
+    $credentialManager = $null
+    foreach ($path in $credentialManagerPaths) {
+        if (Test-Path $path) {
+            $credentialManager = $path
+            break
+        }
+    }
+    
+    if ($credentialManager) {
+        git config --global credential.helper "`"$credentialManager`""
+        Write-Info "Git credential manager configured: $credentialManager"
+    } else {
+        Write-Warning "Git Credential Manager not found. Authentication may fail."
+    }
+    
+    git config --global credential.useHttpPath true
+    git config --global merge.tool vscode
+    git config --global mergetool.vscode.cmd 'code --wait $MERGED'
+    git config --global core.longpaths true
+    
+    Write-Success "Git configured with user: $gitName <$gitEmail>"
+    
+    # Install Git LFS if not available
+    if (-not (Test-Command "git-lfs")) {
+        Write-Info "Installing Git LFS..."
+        try {
+            # Try chocolatey first if available
+            if (Test-Command "choco") {
+                Write-Info "Attempting Git LFS installation via Chocolatey..."
+                
+                # Check if running as administrator
+                $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")
+                
+                if (-not $isAdmin) {
+                    Write-Warning "Chocolatey requires administrator privileges for package installation."
+                    Write-Info "Skipping Chocolatey and using direct download method..."
+                } else {
+                    $chocoResult = choco install git-lfs -y 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success "Git LFS installed via Chocolatey"
+                    } else {
+                        Write-Warning "Chocolatey installation failed: $chocoResult"
+                        Write-Info "Falling back to direct download method..."
+                    }
+                }
+            } else {
+                # Direct download method
+                Write-Info "Installing Git LFS via direct download..."
+                $gitLfsUrl = "https://github.com/git-lfs/git-lfs/releases/download/v3.4.0/git-lfs-windows-amd64-v3.4.0.exe"
+                $gitLfsInstaller = "$env:TEMP\git-lfs-installer.exe"
+                Invoke-WebRequest -Uri $gitLfsUrl -OutFile $gitLfsInstaller -UseBasicParsing
+                Start-Process -FilePath $gitLfsInstaller -ArgumentList "/SILENT" -Wait
+                Remove-Item $gitLfsInstaller -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Refresh PATH and initialize Git LFS
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+            
+            # Wait a moment for PATH to refresh and verify Git LFS installation
+            Start-Sleep -Seconds 2
+            
+            if (Test-Command "git-lfs") {
+                git lfs install --force 2>$null
+                Write-Success "Git LFS installed and initialized"
+            } elseif (Test-Command "git") {
+                # Try to initialize anyway in case git-lfs is available but not in PATH
+                $gitLfsTest = git lfs version 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    git lfs install --force 2>$null
+                    Write-Success "Git LFS found and initialized"
+                } else {
+                    Write-Warning "Git LFS installation may not be complete. Please restart your terminal."
+                }
+            }
+        } catch {
+            Write-Warning "Failed to install Git LFS automatically: $($_.Exception.Message)"
+            Write-Info "Please install Git LFS manually:"
+            Write-Info "1. Download from: https://git-lfs.github.io/"
+            Write-Info "2. Run the installer (may require Administrator privileges)"
+            Write-Info "3. Restart your terminal and run this script again"
+            Write-Info ""
+            Write-Info "Alternative: Run this script as Administrator to enable Chocolatey installation"
+        }
+    } else {
+        Write-Success "Git LFS is already available"
+        git lfs install --force 2>$null
+    }
+}
+
 #endregion
 
 #region StrangeLoop Installation
@@ -1329,6 +1455,17 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 if ($updateResult) {
                     # Check for upgradeable packages with intelligent handling
                     $upgradeableCount = Get-WSLCommandOutput "apt list --upgradeable 2>/dev/null | grep -v 'WARNING:' | wc -l" $ubuntuDistro
+                    
+                    # Install Git LFS in WSL
+                    Write-Info "Installing Git LFS in WSL..."
+                    if ($null -eq $sudoPassword) {
+                        $gitLfsResult = Invoke-WSLCommand -Command "sudo apt-get install -y git-lfs" -Description "Installing Git LFS" -Distribution $ubuntuDistro
+                    } else {
+                        $gitLfsResult = Invoke-WSLCommand -Command "sudo apt-get install -y git-lfs" -Description "Installing Git LFS" -Distribution $ubuntuDistro -SudoPassword $sudoPassword
+                    }
+                    
+
+                    
                     if ($upgradeableCount -and [int]$upgradeableCount -gt 1) {
                         Write-Info "Found $([int]$upgradeableCount - 1) upgradeable packages"
                         
@@ -1445,15 +1582,15 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         Write-Success "Found existing Git user email: $($existingGitEmail.Trim())"
                     }
                     
-                    # Set up Git configuration with predefined values
+                    # Set up Git configuration using Windows Git config values
                     Write-Info "Setting up Git configuration..."
-                    $gitUserEmail = "sakromera@microsoft.com"
-                    $gitUserName = "Sakr Omera"
+                    $gitUserEmail = git config --global user.email 2>$null
+                    $gitUserName = git config --global user.name 2>$null
 
                     Invoke-WSLCommand -Description "Configuring complete Git setup" -Distribution $ubuntuDistro -ScriptBlock {
-                        # Configure Git user information
-                        git config --global user.email "sakromera@microsoft.com"
-                        git config --global user.name "Sakr Omera"
+                        # Configure Git user information using Windows config
+                        git config --global user.email "$gitUserEmail"
+                        git config --global user.name "$gitUserName"
                         git config --global init.defaultBranch "main"
                         
                         # Install Git LFS
