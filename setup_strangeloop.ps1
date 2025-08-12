@@ -125,6 +125,56 @@ function Write-WSLCommand {
     }
 }
 
+# Helper function to check background Git LFS installation status
+function Test-BackgroundGitLfsInstallation {
+    if ($global:GitLfsInstallStarted) {
+        Write-Info "Checking background Git LFS installation status..."
+        
+        # Check if the elevated process has completed
+        if ($global:GitLfsElevatedProcess -and -not $global:GitLfsElevatedProcess.HasExited) {
+            Write-Info "Git LFS installation still running in background. Waiting..."
+            $global:GitLfsElevatedProcess.WaitForExit(30000)  # Wait up to 30 seconds
+        }
+        
+        # Check result file
+        $resultFile = "$env:TEMP\git-lfs-install-result.txt"
+        if (Test-Path $resultFile) {
+            $result = Get-Content $resultFile -ErrorAction SilentlyContinue
+            Remove-Item $resultFile -Force -ErrorAction SilentlyContinue
+            
+            if ($result -eq "SUCCESS") {
+                Write-Success "Background Git LFS installation completed successfully"
+                
+                # Refresh PATH and initialize Git LFS
+                $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+                Start-Sleep -Seconds 2
+                
+                if (Test-Command "git-lfs") {
+                    git lfs install --force 2>$null
+                    Write-Success "Git LFS initialized"
+                    return $true
+                }
+            } elseif ($result -eq "FAILED") {
+                Write-Warning "Background Git LFS installation failed"
+            }
+        }
+        
+        # Clean up temp script
+        Remove-Item "$env:TEMP\install-git-lfs-elevated.ps1" -Force -ErrorAction SilentlyContinue
+        
+        # Final check if Git LFS is available
+        if (Test-Command "git-lfs") {
+            Write-Success "Git LFS is available"
+            git lfs install --force 2>$null
+            return $true
+        } else {
+            Write-Warning "Git LFS not found after background installation"
+            return $false
+        }
+    }
+    return $false
+}
+
 # Helper function to execute commands with duration tracking (like original script)
 function Invoke-CommandWithDuration {
     param(
@@ -840,7 +890,7 @@ if (Test-Command "git") {
                 
                 if (-not $isAdmin) {
                     Write-Warning "Chocolatey requires administrator privileges for package installation."
-                    Write-Info "Launching elevated PowerShell window to install Git LFS..."
+                    Write-Info "Launching elevated PowerShell window to install Git LFS in background..."
                     
                     try {
                         # Create a script to run in elevated session
@@ -849,43 +899,43 @@ Write-Host "Installing Git LFS via Chocolatey (Elevated Session)..." -Foreground
 choco install git-lfs -y
 if (`$LASTEXITCODE -eq 0) {
     Write-Host "Git LFS installed successfully via Chocolatey" -ForegroundColor Green
+    # Create success marker file
+    "SUCCESS" | Out-File -FilePath "$env:TEMP\git-lfs-install-result.txt" -Encoding UTF8
 } else {
     Write-Host "Git LFS installation failed via Chocolatey" -ForegroundColor Red
+    "FAILED" | Out-File -FilePath "$env:TEMP\git-lfs-install-result.txt" -Encoding UTF8
 }
-Write-Host "Press any key to close this window..." -ForegroundColor Yellow
-`$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+Write-Host "Installation process completed. You can close this window." -ForegroundColor Yellow
 "@
                         
                         # Save the script to a temporary file
                         $tempScript = "$env:TEMP\install-git-lfs-elevated.ps1"
                         $elevatedScript | Out-File -FilePath $tempScript -Encoding UTF8
                         
-                        # Launch elevated PowerShell with the script
+                        # Remove any existing result file
+                        Remove-Item "$env:TEMP\git-lfs-install-result.txt" -Force -ErrorAction SilentlyContinue
+                        
+                        # Launch elevated PowerShell in background
                         $processInfo = New-Object System.Diagnostics.ProcessStartInfo
                         $processInfo.FileName = "powershell.exe"
                         $processInfo.Arguments = "-ExecutionPolicy Bypass -File `"$tempScript`""
                         $processInfo.Verb = "runas"
                         $processInfo.UseShellExecute = $true
+                        $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
                         
-                        Write-Host "Please complete the installation in the elevated PowerShell window..." -ForegroundColor Yellow
+                        Write-Host "Please complete the UAC prompt to install Git LFS in background..." -ForegroundColor Yellow
                         $process = [System.Diagnostics.Process]::Start($processInfo)
-                        $process.WaitForExit()
                         
-                        # Clean up temp script
-                        Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                        # Continue with script while installation runs in background
+                        Write-Info "Git LFS installation started in background. Continuing with setup..."
+                        Write-Info "Will check installation status later in the process."
                         
-                        # Check if installation was successful
-                        Start-Sleep -Seconds 2
-                        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+                        # Store process info for later checking
+                        $global:GitLfsElevatedProcess = $process
+                        $global:GitLfsInstallStarted = $true
                         
-                        if (Test-Command "git-lfs") {
-                            Write-Success "Git LFS installed successfully via elevated Chocolatey"
-                        } else {
-                            Write-Warning "Git LFS installation via elevated Chocolatey may have failed. Trying direct download..."
-                            throw "Elevated installation check failed"
-                        }
                     } catch {
-                        Write-Warning "Elevated Chocolatey installation failed or was cancelled: $($_.Exception.Message)"
+                        Write-Warning "Failed to start elevated Git LFS installation: $($_.Exception.Message)"
                         Write-Info "Falling back to direct download method..."
                         
                         # Direct download fallback
@@ -1274,6 +1324,9 @@ $ubuntuDistro = "Ubuntu-24.04"
 if ($needsLinux -or (-not $isWindowsOnly)) {
     Write-Host "[DEBUG] WSL Logic: Entering WSL setup - needsLinux=$needsLinux, isWindowsOnly=$isWindowsOnly" -ForegroundColor Magenta
     Write-Step "WSL Setup and Availability Check"
+    
+    # Check background Git LFS installation status before proceeding
+    Test-BackgroundGitLfsInstallation | Out-Null
     
     # Check for existing Ubuntu 24.04 distribution first
     try {
@@ -2085,6 +2138,10 @@ try {
 #endregion
 
 #region Final Success
+
+# Final check for background Git LFS installation
+Write-Info "Performing final Git LFS installation check..."
+Test-BackgroundGitLfsInstallation | Out-Null
 
 Write-Step "Setup Completed Successfully!" "Green"
 Write-Success "StrangeLoop CLI environment is ready!"
