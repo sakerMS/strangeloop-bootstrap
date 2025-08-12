@@ -2,15 +2,33 @@
 
 ```
 s```
+strangeloop-bootstr```
 strangeloop-bootstrap/
 ├── setup_strangeloop.ps1                # ⭐ Complete Standalone Setup (Single Entry Point)
+├── reset_strangeloop.ps1                # 🔄 RESET SCRIPT - Safely revert setup changes
+├── scripts/                             # 📂 Utility Scripts (Future Use)
+│   └── README.md                        # 📚 Scripts documentation
+├── tests/                               # 🧪 Comprehensive Test Suite
+│   ├── test_setup_strangeloop.ps1       # 🔬 Integration tests with Ubuntu detection
+│   ├── test_setup_functions.ps1         # ⚙️ Unit function tests
+│   ├── test_ubuntu_detection.ps1        # 🔍 Ubuntu detection testing utility
+│   ├── test_runner.ps1                  # 🎯 Convenience test launcher
+│   ├── run_all_tests.ps1               # 🎯 Test runner with reporting
+│   ├── test_usage_guide.ps1            # 📚 Interactive testing guide
+│   └── README.md                        # 📚 Testing documentation
+├── docs/                                # 📂 Documentation
+│   ├── user_guide.md                    # 📚 User installation guide
+│   └── deployment_guide.md              # 📚 GitHub deployment guide
+└── README.md                            # 📖 This file
+```up_strangeloop.ps1                # ⭐ Complete Standalone Setup (Single Entry Point)
 ├── reset_strangeloop.ps1                # 🔄 RESET SCRIPT - Safely revert setup changes
 ├── scripts/                             # 📂 Utility Scripts
 │   ├── test_ubuntu_detection.ps1        # 🔍 Ubun| File | Purpose | User Facing | Architecture |
 |------|---------|-------------|-------------|
 | `setup_strangeloop.ps1` | Complete unified setup | ✅ Download & Run | **Minimalist (no parameters)** |
 | `reset_strangeloop.ps1` | **SAFE RESET - Remove setup changes only** | 🔄 **Essential for troubleshooting** | **Project-safe cleanup** |
-| `scripts/test_ubuntu_detection.ps1` | Ubuntu detection testing utility | 🔍 **Standalone testing** | **Diagnostic tool** |
+| `tests/test_ubuntu_detection.ps1` | Ubuntu detection testing utility | 🔍 **Standalone testing** | **Diagnostic tool** |
+| `tests/test_runner.ps1` | Convenience test launcher | 🎯 **Test convenience** | **Test launcher** |
 | `tests/test_setup_strangeloop.ps1` | Integration tests with Ubuntu detection | 🧪 **Comprehensive testing** | **Test framework** |
 | `tests/run_all_tests.ps1` | Test runner with reporting | 🎯 **Automated testing** | **Test automation** |
 | `docs/user_guide.md` | User guide | 📚 Documentation | Documentation |
@@ -172,7 +190,7 @@ sakerMS/strangeloop-bootstrap/
 │   ├── test_setup_functions.ps1         # Unit tests
 │   ├── run_all_tests.ps1               # Test runner with reporting
 │   ├── test_usage_guide.ps1            # Interactive test guide
-│   └── TEST_FRAMEWORK_README.md         # Test documentation
+│   └── README.md                        # Test documentation
 ├── docs/                                # 📂 Documentation
 │   ├── user_guide.md                    # 📚 User installation guide
 │   └── deployment_guide.md              # 📚 GitHub deployment guide
@@ -224,7 +242,7 @@ cd tests
 ### Test Categories
 - **System Requirements**: PowerShell version, Git availability, WSL status
 - **Script Validation**: Function loading, parameter handling, error scenarios
-- **WSL Integration**: Ubuntu installation, package management, cross-platform compatibility
+- **WSL Integration**: Ubuntu installation, package management, Git configuration with existing value detection, cross-platform compatibility
 - **VS Code Integration**: Extension management, workspace configuration
 - **Network Connectivity**: Download capabilities, package repositories
 - **Performance**: Execution time, memory usage, resource optimization

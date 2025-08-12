@@ -24,6 +24,9 @@ cd tests
 |--------|---------|-------------|
 | `test_setup_strangeloop.ps1` | Integration Tests | System compatibility and setup requirements |
 | `test_setup_functions.ps1` | Unit Tests | Individual function validation |
+| `test_ubuntu_detection.ps1` | Ubuntu Detection | Standalone Ubuntu 24.04 detection testing |
+| `test_git_config.ps1` | Git Configuration | Git configuration detection and setting tests |
+| `test_runner.ps1` | Convenience Runner | Root directory test launcher with options |
 | `run_all_tests.ps1` | Test Runner | Orchestrates all tests with reporting |
 | `test_usage_guide.ps1` | Documentation | Interactive usage guide |
 
@@ -82,4 +85,4 @@ cd tests
 
 ## Documentation
 
-See `TEST_FRAMEWORK_README.md` for complete documentation, troubleshooting guides, and advanced usage patterns.
+This README contains all the test documentation you need. For additional guidance on the StrangeLoop CLI setup, see the main repository README.md and the docs/ folder.

@@ -1,11 +1,11 @@
-# StrangeLoop CLI Setup - Test Runner Convenience Script
-# Runs tests from the root directory for convenience
+# StrangeLoop CLI Setup - Test Runner
+# Professional test execution interface for the StrangeLoop CLI setup system
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
 # Version: 1.0
 # Created: August 2025
 # 
-# This convenience script allows running tests from the root directory
+# This test runner provides a convenient interface for executing various test types
 
 param(
     [ValidateSet("basic", "full", "functions", "guide", "help")]
@@ -17,7 +17,7 @@ param(
     [switch]$SkipNetwork = $false
 )
 
-$testsPath = Join-Path $PSScriptRoot "tests"
+$testsPath = $PSScriptRoot
 
 if (-not (Test-Path $testsPath)) {
     Write-Host "❌ Tests folder not found at: $testsPath" -ForegroundColor Red
@@ -29,12 +29,12 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║            StrangeLoop CLI Setup - Test Runner                ║
-║                    Root Directory Launcher                    ║
+║                Professional Test Interface                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Blue
 
 Write-Host "`nStrangeLoop CLI Setup Test Runner" -ForegroundColor White
-Write-Host "Running tests from root directory..." -ForegroundColor Gray
+Write-Host "Professional testing interface for development and validation" -ForegroundColor Gray
 Write-Host ""
 
 switch ($TestType) {
@@ -65,6 +65,8 @@ switch ($TestType) {
     
     "functions" {
         Write-Host "Running unit function tests..." -ForegroundColor Yellow
+        
+        # Run main function tests
         $scriptPath = Join-Path $testsPath "test_setup_functions.ps1"
         $arguments = @()
         if (-not $SkipWSL) { $arguments += "-TestWSLFunctions" }
@@ -72,6 +74,19 @@ switch ($TestType) {
         if ($Verbose) { $arguments += "-Verbose" }
         
         & $scriptPath @arguments
+        
+        # Run Git configuration tests
+        if (-not $SkipWSL) {
+            Write-Host "`nRunning Git configuration tests..." -ForegroundColor Yellow
+            $gitTestPath = Join-Path $testsPath "test_git_config.ps1"
+            if (Test-Path $gitTestPath) {
+                & $gitTestPath
+            } else {
+                Write-Warning "Git configuration test not found: $gitTestPath"
+            }
+        } else {
+            Write-Host "`nSkipping Git configuration tests (WSL disabled)" -ForegroundColor Gray
+        }
     }
     
     "guide" {
@@ -84,7 +99,7 @@ switch ($TestType) {
         Write-Host "StrangeLoop CLI Setup Test Runner - Usage Help" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "Usage:" -ForegroundColor White
-        Write-Host "  .\test.ps1 [-TestType <type>] [options]" -ForegroundColor Gray
+        Write-Host "  .\tests\test_runner.ps1 [-TestType <type>] [options]" -ForegroundColor Gray
         Write-Host ""
         Write-Host "Test Types:" -ForegroundColor Yellow
         Write-Host "  basic      - Run basic integration tests (default)" -ForegroundColor Gray
@@ -101,13 +116,13 @@ switch ($TestType) {
         Write-Host "  -SkipNetwork     - Skip network connectivity tests" -ForegroundColor Gray
         Write-Host ""
         Write-Host "Examples:" -ForegroundColor Cyan
-        Write-Host "  .\test.ps1                                    # Basic tests" -ForegroundColor White
-        Write-Host "  .\test.ps1 -TestType full -GenerateReport    # Full tests with reports" -ForegroundColor White
-        Write-Host "  .\test.ps1 -TestType functions -Verbose      # Detailed function tests" -ForegroundColor White
-        Write-Host "  .\test.ps1 -SkipWSL -SkipVSCode              # Skip optional components" -ForegroundColor White
+        Write-Host "  .\tests\test_runner.ps1                                    # Basic tests" -ForegroundColor White
+        Write-Host "  .\tests\test_runner.ps1 -TestType full -GenerateReport    # Full tests with reports" -ForegroundColor White
+        Write-Host "  .\tests\test_runner.ps1 -TestType functions -Verbose      # Detailed function tests" -ForegroundColor White
+        Write-Host "  .\tests\test_runner.ps1 -SkipWSL -SkipVSCode              # Skip optional components" -ForegroundColor White
         Write-Host ""
         Write-Host "For detailed documentation, run:" -ForegroundColor Green
-        Write-Host "  .\test.ps1 -TestType guide" -ForegroundColor Cyan
+        Write-Host "  .\tests\test_runner.ps1 -TestType guide" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "Test files are located in the 'tests' folder." -ForegroundColor Gray
     }

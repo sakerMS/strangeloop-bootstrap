@@ -1240,17 +1240,35 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     # Git configuration setup
                     Write-Info "Configuring Git in WSL environment..."
                     
-                    # Get user input for Git configuration
+                    # Check existing Git configuration first
+                    Write-Info "Checking existing Git configuration..."
+                    $existingGitName = Get-WSLCommandOutput "git config --global user.name 2>/dev/null || echo ''" $ubuntuDistro
+                    $existingGitEmail = Get-WSLCommandOutput "git config --global user.email 2>/dev/null || echo ''" $ubuntuDistro
+                    
+                    if ($existingGitName -and $existingGitName.Trim() -ne "") {
+                        Write-Success "Found existing Git user name: $($existingGitName.Trim())"
+                    }
+                    if ($existingGitEmail -and $existingGitEmail.Trim() -ne "") {
+                        Write-Success "Found existing Git user email: $($existingGitEmail.Trim())"
+                    }
+                    
+                    # Get user input for Git configuration with existing values as defaults
                     Write-Info "Git requires user configuration for commits and version control."
-                    $gitUserName = Get-UserInput "Enter your full name for Git commits" ""
-                    $gitUserEmail = Get-UserInput "Enter your email address for Git commits" ""
+                    $defaultName = if ($existingGitName -and $existingGitName.Trim() -ne "") { $existingGitName.Trim() } else { "" }
+                    $defaultEmail = if ($existingGitEmail -and $existingGitEmail.Trim() -ne "") { $existingGitEmail.Trim() } else { "" }
+                    
+                    $gitUserName = Get-UserInput "Enter your full name for Git commits" $defaultName
+                    $gitUserEmail = Get-UserInput "Enter your email address for Git commits" $defaultEmail
                     
                     if ($gitUserName -and $gitUserEmail) {
                         Write-Info "Setting up Git configuration..."
                         
-                        # Configure Git user settings
-                        Invoke-WSLCommand "git config --global user.name `"$gitUserName`"" "Setting Git user name" $ubuntuDistro
-                        Invoke-WSLCommand "git config --global user.email `"$gitUserEmail`"" "Setting Git user email" $ubuntuDistro
+                        # Configure Git user settings with proper escaping for WSL
+                        $gitNameCommand = "git config --global user.name '$gitUserName'"
+                        $gitEmailCommand = "git config --global user.email '$gitUserEmail'"
+                        
+                        Invoke-WSLCommand $gitNameCommand "Setting Git user name" $ubuntuDistro
+                        Invoke-WSLCommand $gitEmailCommand "Setting Git user email" $ubuntuDistro
                         
                         # Configure Git default branch
                         Invoke-WSLCommand "git config --global init.defaultBranch main" "Setting default branch to main" $ubuntuDistro
@@ -1265,11 +1283,11 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         
                         # Configure Git credential helper to use Windows Git Credential Manager
                         $gitCredentialPath = "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
-                        $gitCredentialExists = Get-WSLCommandOutput "test -f `"$gitCredentialPath`" && echo 'exists' || echo 'missing'" $ubuntuDistro
+                        $gitCredentialExists = Get-WSLCommandOutput "test -f '$gitCredentialPath' && echo 'exists' || echo 'missing'" $ubuntuDistro
                         
                         if ($gitCredentialExists -eq "exists") {
                             Write-Info "Configuring Git to use Windows Credential Manager..."
-                            Invoke-WSLCommand "git config --global credential.helper `"$gitCredentialPath`"" "Setting Git credential helper" $ubuntuDistro
+                            Invoke-WSLCommand "git config --global credential.helper '$gitCredentialPath'" "Setting Git credential helper" $ubuntuDistro
                             Invoke-WSLCommand "git config --global credential.useHttpPath true" "Enabling HTTP path credentials" $ubuntuDistro
                         } else {
                             Write-Warning "Windows Git Credential Manager not found. Git credentials will need manual setup."
@@ -1278,7 +1296,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         
                         # Configure merge tool to use VS Code
                         Invoke-WSLCommand "git config --global merge.tool vscode" "Setting VS Code as merge tool" $ubuntuDistro
-                        Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait `$MERGED'" "Configuring VS Code merge command" $ubuntuDistro
+                        Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait'" "Configuring VS Code merge command" $ubuntuDistro
                         
                         # Verify Git configuration
                         Write-Info "Verifying Git configuration..."
@@ -1299,8 +1317,8 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     } else {
                         Write-Warning "Git user name or email not provided. Skipping Git configuration."
                         Write-Info "You can configure Git later using:"
-                        Write-Info "  git config --global user.name `"Your Name`""
-                        Write-Info "  git config --global user.email `"your.email@example.com`""
+                        Write-Info "  git config --global user.name 'Your Name'"
+                        Write-Info "  git config --global user.email 'your.email@example.com'"
                     }
                     
                     # Clear sudo password from memory for security
