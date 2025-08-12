@@ -982,7 +982,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     if ($wslFullyFunctional) {
                         Write-Success "WSL repair successful - $ubuntuDistro is now functional"
                         $wslAvailable = $true
-                        return
+                        # Continue to development environment setup instead of returning
                     } else {
                         Write-Warning "WSL repair did not fully resolve the issue. Continuing with installation attempts..."
                     }
@@ -1119,6 +1119,8 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
     # Enhanced WSL development environment setup
         if ($wslAvailable -and $ubuntuDistro) {
             Write-Step "WSL Development Environment Setup"
+            Write-Info "Starting WSL development environment configuration..."
+            Write-Info "WSL Status: Available=$wslAvailable, Distribution=$ubuntuDistro"
             
             # Get sudo password upfront for package management operations
             $sudoPassword = Get-SudoPassword $ubuntuDistro
