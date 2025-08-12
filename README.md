@@ -138,14 +138,72 @@ When deployed to GitHub, the structure is:
 sakerMS/strangeloop-bootstrap/
 ├── setup_strangeloop.ps1                # ⭐ Complete standalone setup
 ├── reset_strangeloop.ps1                # 🔄 Safe reset functionality
+├── test.ps1                             # 🧪 Test launcher (convenience)
 ├── scripts/                             # 📂 Legacy files (not used)
 │   ├── strangeloop_linux.ps1            # �️ Legacy
 │   └── strangeloop_windows.ps1          # 🗃️ Legacy
+├── tests/                               # 🧪 Test Framework
+│   ├── test_setup_strangeloop.ps1       # Integration tests
+│   ├── test_setup_functions.ps1         # Unit tests
+│   ├── run_all_tests.ps1               # Test runner with reporting
+│   ├── test_usage_guide.ps1            # Interactive test guide
+│   └── TEST_FRAMEWORK_README.md         # Test documentation
 ├── docs/                                # 📂 Documentation
 │   ├── user_guide.md                    # 📚 User installation guide
 │   └── deployment_guide.md              # 📚 GitHub deployment guide
 └── README.md                            # 📖 Main documentation
 ```
+
+## 🧪 Test Framework
+
+A comprehensive test suite validates the setup script's functionality across different environments and use cases.
+
+### Test Structure
+- **`test.ps1`** - Convenience launcher in root directory
+- **`tests/test_setup_strangeloop.ps1`** - Integration tests (613 lines)
+  - System requirements validation
+  - WSL integration testing
+  - VS Code integration testing
+  - Network connectivity checks
+  - Performance benchmarking
+- **`tests/test_setup_functions.ps1`** - Unit tests (456 lines)
+  - Function-level validation
+  - Parameter testing
+  - Edge case handling
+  - Performance testing
+- **`tests/run_all_tests.ps1`** - Test orchestration (448 lines)
+  - Comprehensive test execution
+  - HTML/JSON report generation
+  - Performance metrics
+  - Failure analysis
+
+### Running Tests
+```powershell
+# Quick test (from root directory)
+.\test.ps1
+
+# Integration tests only
+.\test.ps1 -Type integration
+
+# Unit tests only
+.\test.ps1 -Type unit
+
+# All tests with detailed reporting
+.\test.ps1 -Type all
+
+# From tests directory
+cd tests
+.\run_all_tests.ps1 -TestSuite All -OutputFormat HTML
+```
+
+### Test Categories
+- **System Requirements**: PowerShell version, Git availability, WSL status
+- **Script Validation**: Function loading, parameter handling, error scenarios
+- **WSL Integration**: Ubuntu installation, package management, cross-platform compatibility
+- **VS Code Integration**: Extension management, workspace configuration
+- **Network Connectivity**: Download capabilities, package repositories
+- **Performance**: Execution time, memory usage, resource optimization
+- **Security**: Execution policy handling, safe file operations
 
 ## 🔗 GitHub URLs
 

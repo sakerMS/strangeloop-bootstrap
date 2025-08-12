@@ -258,7 +258,7 @@ function Initialize-UbuntuDistribution {
             Start-Sleep -Seconds 3
             
             # Use Start-Process to launch Ubuntu without blocking
-            $ubuntuProcess = Start-Process -FilePath "wsl" -ArgumentList "--distribution", $DistributionName -PassThru -NoNewWindow:$false
+            Start-Process -FilePath "wsl" -ArgumentList "--distribution", $DistributionName -NoNewWindow:$false
             
             # Wait for the process to start and user to complete setup
             Write-Info "Waiting for Ubuntu setup to complete..."
@@ -852,7 +852,6 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
     # Set WSL availability based on validation result
     if ($wslFullyFunctional) {
         Write-Success "WSL and $ubuntuDistro are fully functional"
-        $wslAvailable = $true
     }
     
     if (-not $wslFullyFunctional) {
@@ -925,10 +924,9 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     exit 1
                 }
             } else {
+            } else {
                 Write-Info "WSL not installed - will use Windows-only development mode"
-                $wslAvailable = $false
             }
-        } else {
             # WSL command exists but distribution check failed - try to fix or install distribution
             if ($needsLinux) {
                 Write-Info "WSL is installed but $ubuntuDistro distribution is not functional. Attempting to fix..."
@@ -948,25 +946,22 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 }
                 
                 $wslDistros = wsl -l -v 2>$null
-                $foundUbuntu = $false
-            
+
+            $ubuntuDistroFound = $false
             if ($wslDistros) {
                 $wslDistros -split "`n" | ForEach-Object {
                     $line = $_.Trim()
                     if ($line -and $line -notmatch "^Windows Subsystem") {
-                        # Clean the line of any special characters
-                        $cleanLine = $line -replace '[^\x20-\x7F]', ''  # Remove non-printable characters
-                        
-                        # Check if this line contains our Ubuntu distribution
+                        $cleanLine = $line -replace '[^\x20-\x7F]', ''
                         if ($cleanLine -like "*$ubuntuDistro*") {
-                            $foundUbuntu = $true
                             Write-Success "Found Ubuntu distribution: $cleanLine"
+                            $ubuntuDistroFound = $true
                         }
                     }
                 }
             }
-            
-            if (-not $foundUbuntu) {
+
+            if (-not $ubuntuDistroFound) {
                 if ($needsLinux) {
                     Write-Info "$ubuntuDistro not found. Installing $ubuntuDistro..."
                     
@@ -1039,11 +1034,10 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                             $wslAvailable = $true
                         } else {
                             Write-Warning "$ubuntuDistro installation completed but initialization had issues."
+                        } else {
+                            Write-Warning "$ubuntuDistro installation completed but initialization had issues."
                             Write-Info "You may need to manually launch Ubuntu from the Start menu to complete setup."
-                            $wslAvailable = $true  # Still mark as available since it's installed
                         }
-                    } else {
-                        Write-Error "All $ubuntuDistro installation methods failed. Manual installation required:"
                         Write-Info "1. Open Microsoft Store"
                         Write-Info "2. Search for 'Ubuntu 24.04' or 'Ubuntu'"
                         Write-Info "3. Install any Ubuntu distribution"
@@ -1056,10 +1050,9 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 } else {
                     Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
                     $wslAvailable = $false
+                } else {
+                    Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
                 }
-            } else {
-                Write-Success "Ubuntu distribution is available"
-                
                 # Ensure Ubuntu is properly initialized
                 Write-Info "Verifying Ubuntu distribution is ready for use..."
                 $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
@@ -1082,7 +1075,6 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 }
             }
             } else {
-                Write-Info "WSL available but Ubuntu distribution not needed - will use Windows-only development mode"
                 $wslAvailable = $false
             }
         } else {
