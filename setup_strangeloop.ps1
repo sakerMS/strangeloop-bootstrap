@@ -11,9 +11,11 @@
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: Automatically handled
 #
-# Usage: .\setup_strangeloop.ps1
+# Usage: .\setup_strangeloop.ps1 [-Verbose]
 
-param()
+param(
+    [switch]$Verbose
+)
 
 # Check and handle execution policy first (before any other operations)
 $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
@@ -116,6 +118,41 @@ function Test-Command {
     $null -ne (Get-Command $Command -ErrorAction SilentlyContinue)
 }
 
+function Write-WSLCommand {
+    param([string]$Command)
+    if ($Verbose) {
+        Write-Host "[WSL CMD] $Command" -ForegroundColor Cyan
+    }
+}
+
+# Helper function to execute commands with duration tracking (like original script)
+function Invoke-CommandWithDuration {
+    param(
+        [string]$Command,
+        [string]$Description,
+        [scriptblock]$ScriptBlock
+    )
+    
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    $startTime = Get-Date
+    
+    try {
+        if ($ScriptBlock) {
+            $result = & $ScriptBlock
+        } else {
+            $result = Invoke-Expression $Command
+        }
+        
+        $duration = (Get-Date).Subtract($startTime).TotalSeconds.ToString('F1')
+        Write-Host "  ✓ Complete! Duration: ${duration}s" -ForegroundColor Green
+        return $result
+    } catch {
+        $duration = (Get-Date).Subtract($startTime).TotalSeconds.ToString('F1')
+        Write-Host "  ✗ Failed! Duration: ${duration}s" -ForegroundColor Red
+        throw
+    }
+}
+
 function Test-WSLInstallation {
     param([string]$DistributionName = "Ubuntu-24.04")
     
@@ -129,6 +166,7 @@ function Test-WSLInstallation {
     
     # Check WSL version and status
     try {
+        Write-WSLCommand "wsl --version"
         $wslVersion = wsl --version 2>$null
         if ($wslVersion) {
             Write-Success "WSL is installed and operational"
@@ -143,6 +181,7 @@ function Test-WSLInstallation {
     
     # Check if the specific distribution is installed and functional
     try {
+        Write-WSLCommand "wsl --list --quiet"
         $distributions = wsl --list --quiet 2>$null
         $distroFound = $false
         
@@ -161,6 +200,7 @@ function Test-WSLInstallation {
         if ($distroFound) {
             # Test if we can execute commands in the distribution
             try {
+                Write-WSLCommand "wsl --distribution $DistributionName --exec echo `"test`""
                 $testResult = wsl --distribution $DistributionName --exec echo "test"
                 if ($testResult -eq "test") {
                     Write-Success "$DistributionName is installed and functional"
@@ -193,8 +233,10 @@ function Repair-WSLInstallation {
     # Method 1: Reset WSL
     Write-Info "Attempting WSL reset..."
     try {
+        Write-WSLCommand "wsl --shutdown"
         wsl --shutdown
         Start-Sleep -Seconds 3
+        Write-WSLCommand "wsl --set-default-version 2"
         wsl --set-default-version 2
         Write-Success "WSL reset completed"
         $repairSuccess = $true
@@ -219,8 +261,10 @@ function Repair-WSLInstallation {
     if (-not $repairSuccess -and $DistributionName) {
         Write-Info "Attempting to re-register $DistributionName distribution..."
         try {
+            Write-WSLCommand "wsl --unregister $DistributionName"
             wsl --unregister $DistributionName 2>$null
             Start-Sleep -Seconds 2
+            Write-WSLCommand "wsl --install --distribution $DistributionName --no-launch"
             wsl --install --distribution $DistributionName --no-launch
             Write-Success "$DistributionName re-registration initiated"
             $repairSuccess = $true
@@ -239,6 +283,7 @@ function Initialize-UbuntuDistribution {
     
     try {
         # Try to run a simple command to see if the distribution is initialized
+        Write-WSLCommand "wsl --distribution $DistributionName --exec echo `"test`""
         $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
         
         if ($testResult -eq "test") {
@@ -274,6 +319,7 @@ function Initialize-UbuntuDistribution {
                 $waitTime += 10
                 
                 try {
+                    Write-WSLCommand "wsl --distribution $DistributionName --exec echo `"test`""
                     $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
                     if ($testResult -eq "test") {
                         $setupComplete = $true
@@ -301,6 +347,7 @@ function Initialize-UbuntuDistribution {
                 
                 # Test one more time
                 try {
+                    Write-WSLCommand "wsl --distribution $DistributionName --exec echo `"test`""
                     $testResult = wsl --distribution $DistributionName --exec echo "test" 2>$null
                     if ($testResult -eq "test") {
                         Write-Success "Ubuntu setup completed!"
@@ -341,6 +388,7 @@ function Get-UserInput {
 
 function Test-WSL {
     try {
+        Write-WSLCommand "wsl --version"
         $wslVersion = wsl --version 2>$null
         return $LASTEXITCODE -eq 0 -and -not [string]::IsNullOrEmpty($wslVersion)
     } catch {
@@ -520,109 +568,137 @@ function Open-VSCode {
     }
 }
 
+
 function Invoke-WSLCommand {
-    param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
-    try {
-        # Use specified distribution or default Ubuntu
-        $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
-        $targetDisplay = if ($Distribution) { $Distribution } else { 'Default WSL' }
+    [CmdletBinding()]
+    param(
+        [Parameter(Position=0)]
+        [string]$Command,
         
-        Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+        [Parameter(Position=1)]
+        [string]$Description,
         
-        # Only show target distribution if it's different from the last shown one
+        [Parameter(Position=2)]
+        [string]$Distribution = "",
+        
+        [Parameter(Position=3)]
+        [SecureString]$SudoPassword = $null,
+        
+        [Parameter()]
+        [scriptblock]$ScriptBlock
+    )
+    
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    $startTime = Get-Date
+    
+    # Only show target distribution if it's different from the last shown one
+    if ($Distribution) {
+        $targetDisplay = $Distribution
         if ($script:LastShownDistribution -ne $targetDisplay) {
             Write-Host "  Target: $targetDisplay" -ForegroundColor Gray
             $script:LastShownDistribution = $targetDisplay
         }
-        
-        # Track start time for duration calculation
-        $startTime = Get-Date
-        
-        # Handle sudo commands with password if provided
-        if ($SudoPassword -and $Command.StartsWith("sudo ")) {
-            # Convert SecureString to plain text for command execution
-            $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
-            # Replace sudo with echo password | sudo -S
-            $sudoCommand = $Command -replace "^sudo ", ""
-            $commandWithPassword = "echo '$plaintextPassword' | sudo -S $sudoCommand"
-            $wslCommand = "wsl $distroParam -- bash -c `"$commandWithPassword`""
-        } else {
-            $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
-        }
-        
-        $result = Invoke-Expression $wslCommand 2>&1
-        
-        # For StrangeLoop commands, check if output contains success indicators rather than relying solely on exit code
-        $isStrangeLoopCommand = $Command -match "strangeloop"
-        $hasSuccessOutput = $result -and ($result -join "`n") -match "(initialized|generated|merged|up to date)"
-        
-        if ($LASTEXITCODE -eq 0 -or ($isStrangeLoopCommand -and $hasSuccessOutput)) {
-            Write-Host "  ✓ Complete! Duration: $((Get-Date).Subtract($startTime).TotalSeconds.ToString('F1'))s" -ForegroundColor Green
-            return $true
-        } else {
-            Write-Host "`n  ⚠ Failed (Exit code: $LASTEXITCODE)" -ForegroundColor Red
-            if ($result) {
-                $errorLines = $result | Where-Object { $_ -and $_.ToString().Trim() }
-                if ($errorLines) {
-                    Write-Host "  Error: $($errorLines[0])" -ForegroundColor Red
-                }
+    }
+    
+    try {
+        if ($ScriptBlock) {
+            # Execute script block in WSL context by converting commands
+            $scriptContent = $ScriptBlock.ToString()
+            $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
+            
+            # Handle sudo commands with password if provided
+            if ($SudoPassword -and $scriptContent -match "sudo ") {
+                $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+                # Replace sudo commands in script content
+                $scriptContent = $scriptContent -replace "sudo ", "echo '$plaintextPassword' | sudo -S "
             }
-            Write-Host "  Manual command: wsl $distroParam -- $Command" -ForegroundColor Yellow
-            return $false
+            
+            $wslCommand = "wsl $distroParam -- bash -c `"$scriptContent`""
+            Write-WSLCommand $wslCommand
+            $result = Invoke-Expression $wslCommand 2>&1
+        } else {
+            # Single command execution (legacy support)
+            $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
+            
+            if ($SudoPassword -and $Command.StartsWith("sudo ")) {
+                $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+                $sudoCommand = $Command -replace "^sudo ", ""
+                $commandWithPassword = "echo '$plaintextPassword' | sudo -S $sudoCommand"
+                $wslCommand = "wsl $distroParam -- bash -c `"$commandWithPassword`""
+                Write-WSLCommand "wsl $distroParam -- bash -c `"echo '[SUDO]' | sudo -S $sudoCommand`""
+            } else {
+                $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
+                Write-WSLCommand $wslCommand
+            }
+            
+            $result = Invoke-Expression $wslCommand 2>&1
         }
+        
+        $duration = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+        Write-Host "  ✓ Complete! Duration: ${duration}s" -ForegroundColor Green
+        return $result
     } catch {
-        Write-Host "`n  ✗ Exception occurred" -ForegroundColor Red
+        $duration = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+        Write-Host "  ✗ Failed! Duration: ${duration}s" -ForegroundColor Red
         Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
 
+# Function to execute WSL command and return output
 function Get-WSLCommandOutput {
     param([string]$Command, [string]$Distribution = "")
     try {
         $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
         $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
+        Write-WSLCommand $wslCommand
         $result = Invoke-Expression $wslCommand 2>&1
         
-        if ($LASTEXITCODE -eq 0) {
-            return ($result | Where-Object { $_ -and $_.ToString().Trim() }) -join "`n"
+        if ($result -is [array]) {
+            return $result -join "`n"
         } else {
-            return $null
+            return $result
         }
     } catch {
+        Write-Host "`n  ✗ Failed: $($_.Exception.Message)" -ForegroundColor Red
         return $null
     }
 }
 
+# Function to get and verify sudo password for WSL
 function Get-SudoPassword {
-    param([string]$Distribution)
+    param([string]$Distribution = "")
     
-    Write-Info "Checking sudo access for WSL operations..."
+    Write-Host "  Checking sudo access for WSL operations..." -ForegroundColor Yellow
     
-    # First check if sudo is passwordless
+    # First, check if we can run sudo without password (passwordless sudo)
     $sudoCheck = Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $Distribution
     
     if ($sudoCheck -eq "NOPASSWD") {
-        Write-Success "Passwordless sudo is configured"
+        Write-Success "Passwordless sudo access confirmed"
         return $null
+    }
+    
+    Write-Host "  Sudo password is required for package management operations." -ForegroundColor Yellow
+    $securePassword = Read-Host "Please enter your WSL sudo password (input will be hidden)" -AsSecureString
+    
+    if ($securePassword.Length -eq 0) {
+        Write-Error "No password provided. Sudo operations will be skipped."
+        return $null
+    }
+    
+    # Convert SecureString to plain text for verification
+    $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
+    
+    # Test the password
+    $testResult = Get-WSLCommandOutput "echo '$plaintextPassword' | sudo -S true 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'" $Distribution
+    
+    if ($testResult -eq "SUCCESS") {
+        Write-Success "Sudo password verified"
+        return $securePassword
     } else {
-        Write-Info "Sudo password is required for package management operations."
-        Write-Host "Please enter your WSL sudo password (input will be hidden):" -ForegroundColor Yellow
-        
-        # Securely read password
-        $securePassword = Read-Host -AsSecureString
-        $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
-        
-        # Test the password
-        $testResult = Get-WSLCommandOutput "echo '$plaintextPassword' | sudo -S true 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'" $Distribution
-        
-        if ($testResult -eq "SUCCESS") {
-            Write-Success "Sudo password verified"
-            return $securePassword
-        } else {
-            Write-Error "Invalid sudo password. Please check your password and try again."
-            return $null
-        }
+        Write-Error "Invalid sudo password. Please check your password and try again."
+        return $null
     }
 }
 
@@ -847,6 +923,7 @@ $wslAvailable = $false
 $ubuntuDistro = "Ubuntu-24.04"
 
 if ($needsLinux -or (-not $isWindowsOnly)) {
+    Write-Host "[DEBUG] WSL Logic: Entering WSL setup - needsLinux=$needsLinux, isWindowsOnly=$isWindowsOnly" -ForegroundColor Magenta
     Write-Step "WSL Setup and Availability Check"
     
     # Check for existing Ubuntu 24.04 distribution first
@@ -854,6 +931,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
         Write-Info "Checking for existing Ubuntu 24.04 distribution..."
         
         # First, try to get the default distribution from wsl --status
+        Write-WSLCommand "wsl --status"
         $wslStatus = wsl --status 2>$null
         if ($wslStatus) {
             $defaultDistroLine = $wslStatus | Where-Object { $_ -like "*Default Distribution:*" }
@@ -868,6 +946,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
         }
         
         # Check the full distribution list for Ubuntu 24.04
+        Write-WSLCommand "wsl --list --quiet"
         $distributions = wsl --list --quiet 2>$null
         $ubuntu2404Found = $false
         if ($distributions) {
@@ -895,12 +974,16 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
     
     # Set WSL availability based on validation result
     if ($wslFullyFunctional) {
+        Write-Host "[DEBUG] WSL Logic: WSL is fully functional - wslFullyFunctional=$wslFullyFunctional, ubuntuDistro=$ubuntuDistro" -ForegroundColor Magenta
         Write-Success "WSL and $ubuntuDistro are fully functional"
         $wslAvailable = $true
     } else {
+        Write-Host "[DEBUG] WSL Logic: WSL not fully functional, checking installation status - wslFullyFunctional=$wslFullyFunctional" -ForegroundColor Magenta
         # Check if basic WSL is at least installed
         if (-not (Test-Command "wsl")) {
+            Write-Host "[DEBUG] WSL Logic: WSL command not found - Test-Command 'wsl' returned $false" -ForegroundColor Magenta
             if ($needsLinux) {
+                Write-Host "[DEBUG] WSL Logic: Linux is needed, installing WSL - needsLinux=$needsLinux" -ForegroundColor Magenta
                 Write-Info "WSL is required but not installed. Installing WSL..."
                 Write-Warning "This requires administrator privileges and may require a restart."
                 
@@ -910,6 +993,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 # Method 1: Standard WSL install
                 Write-Info "Attempting standard WSL installation..."
                 try {
+                    Write-WSLCommand "wsl --install --distribution $ubuntuDistro --no-launch"
                     wsl --install --distribution $ubuntuDistro --no-launch
                     Write-Success "WSL installation command executed successfully"
                     $installSuccess = $true
@@ -919,6 +1003,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 
                 # Method 2: Force enable WSL features if standard install failed
                 if (-not $installSuccess) {
+                    Write-Host "[DEBUG] WSL Logic: Standard install failed, trying force enable" -ForegroundColor Magenta
                     Write-Info "Attempting to force enable WSL features..."
                     try {
                         # Enable WSL and Virtual Machine Platform features
@@ -926,16 +1011,20 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
                         
                         # Try WSL install again after enabling features
+                        Write-WSLCommand "wsl --install --distribution $ubuntuDistro --no-launch"
                         wsl --install --distribution $ubuntuDistro --no-launch
                         Write-Success "WSL features enabled and installation attempted"
                         $installSuccess = $true
                     } catch {
                         Write-Warning "Force WSL feature installation failed: $($_.Exception.Message)"
                     }
+                } else {
+                    Write-Host "[DEBUG] WSL Logic: Standard install succeeded, skipping force enable" -ForegroundColor Magenta
                 }
                 
                 # Method 3: PowerShell feature installation as fallback
                 if (-not $installSuccess) {
+                    Write-Host "[DEBUG] WSL Logic: Force enable failed, trying PowerShell features" -ForegroundColor Magenta
                     Write-Info "Attempting PowerShell-based feature installation..."
                     try {
                         Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart
@@ -945,9 +1034,12 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     } catch {
                         Write-Warning "PowerShell feature installation failed: $($_.Exception.Message)"
                     }
+                } else {
+                    Write-Host "[DEBUG] WSL Logic: Previous installation method succeeded, skipping PowerShell features" -ForegroundColor Magenta
                 }
                 
                 if ($installSuccess) {
+                    Write-Host "[DEBUG] WSL Logic: Installation successful, requiring restart" -ForegroundColor Magenta
                     Write-Warning "WSL installation initiated. You MUST restart your computer now."
                     Write-Info "After restart:"
                     Write-Info "1. Run this script again to continue setup"
@@ -957,6 +1049,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     Write-Info "Note: The script will handle Ubuntu user setup automatically after restart."
                     exit 0
                 } else {
+                    Write-Host "[DEBUG] WSL Logic: All installation methods failed" -ForegroundColor Magenta
                     Write-Error "All WSL installation methods failed. Manual installation required:"
                     Write-Info "1. Run PowerShell as Administrator"
                     Write-Info "2. Execute: wsl --install"
@@ -967,66 +1060,89 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     exit 1
                 }
             } else {
+                Write-Host "[DEBUG] WSL Logic: Linux not needed, using Windows-only mode - needsLinux=$needsLinux" -ForegroundColor Magenta
                 Write-Info "WSL not installed - will use Windows-only development mode"
             }
         } else {
+            Write-Host "[DEBUG] WSL Logic: WSL command exists but distribution check failed - Test-Command 'wsl'=$true, wslFullyFunctional=$false" -ForegroundColor Magenta
             # WSL command exists but distribution check failed - try to fix or install distribution
             if ($needsLinux) {
+                Write-Host "[DEBUG] WSL Logic: Linux needed, attempting to fix WSL distribution - needsLinux=$needsLinux, ubuntuDistro=$ubuntuDistro" -ForegroundColor Magenta
                 Write-Info "WSL is installed but $ubuntuDistro distribution is not functional. Attempting to fix..."
                 
                 # Try to repair WSL first
                 $repairResult = Repair-WSLInstallation -DistributionName $ubuntuDistro
                 if ($repairResult) {
+                    Write-Host "[DEBUG] WSL Logic: WSL repair attempted, re-checking - repairResult=$repairResult" -ForegroundColor Magenta
                     Write-Info "WSL repair attempted. Re-checking installation..."
                     $wslFullyFunctional = Test-WSLInstallation -DistributionName $ubuntuDistro
                     if ($wslFullyFunctional) {
+                        Write-Host "[DEBUG] WSL Logic: WSL repair successful - wslFullyFunctional=$wslFullyFunctional after repair" -ForegroundColor Magenta
                         Write-Success "WSL repair successful - $ubuntuDistro is now functional"
                         $wslAvailable = $true
                         # Continue to development environment setup instead of returning
                     } else {
+                        Write-Host "[DEBUG] WSL Logic: WSL repair did not resolve issue - wslFullyFunctional=$wslFullyFunctional after repair" -ForegroundColor Magenta
                         Write-Warning "WSL repair did not fully resolve the issue. Continuing with installation attempts..."
                     }
+                } else {
+                    Write-Host "[DEBUG] WSL Logic: WSL repair was not attempted - repairResult=$repairResult" -ForegroundColor Magenta
                 }
                 
+            Write-WSLCommand "wsl -l -v"
             $wslDistros = wsl -l -v 2>$null
 
             $ubuntuDistroFound = $false
             if ($wslDistros) {
+                Write-Host "[DEBUG] WSL Logic: Checking existing WSL distributions" -ForegroundColor Magenta
                 $wslDistros -split "`n" | ForEach-Object {
                     $line = $_.Trim()
                     if ($line -and $line -notmatch "^Windows Subsystem") {
                         $cleanLine = $line -replace '[^\x20-\x7F]', ''
                         if ($cleanLine -like "*$ubuntuDistro*") {
+                            Write-Host "[DEBUG] WSL Logic: Found Ubuntu distribution: $cleanLine" -ForegroundColor Magenta
                             Write-Success "Found Ubuntu distribution: $cleanLine"
                             $ubuntuDistroFound = $true
+                        } else {
+                            Write-Host "[DEBUG] WSL Logic: Distribution line doesn't match Ubuntu-24.04: $cleanLine" -ForegroundColor Magenta
                         }
+                    } else {
+                        Write-Host "[DEBUG] WSL Logic: Skipping empty or header line: $line" -ForegroundColor Magenta
                     }
                 }
+            } else {
+                Write-Host "[DEBUG] WSL Logic: No WSL distributions found - wslDistros is null/empty" -ForegroundColor Magenta
             }
 
             if ($ubuntuDistroFound) {
+                Write-Host "[DEBUG] WSL Logic: Ubuntu distribution found, verifying initialization - ubuntuDistroFound=$ubuntuDistroFound" -ForegroundColor Magenta
                 # Ensure Ubuntu is properly initialized
                 Write-Info "Verifying Ubuntu distribution is ready for use..."
                 $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
                 
                 if ($initSuccess) {
+                    Write-Host "[DEBUG] WSL Logic: Ubuntu initialization successful - initSuccess=$initSuccess" -ForegroundColor Magenta
                     Write-Success "$ubuntuDistro is ready for use!"
                     $wslAvailable = $true
                     
                     # Set as default distribution
                     try {
+                        Write-WSLCommand "wsl -s $ubuntuDistro"
                         wsl -s $ubuntuDistro 2>$null
                         Write-Success "$ubuntuDistro set as default WSL distribution"
                     } catch {
                         Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
                     }
                 } else {
+                    Write-Host "[DEBUG] WSL Logic: Ubuntu found but not properly initialized - initSuccess=$initSuccess" -ForegroundColor Magenta
                     Write-Warning "$ubuntuDistro found but not properly initialized"
                     Write-Info "You may need to manually launch Ubuntu to complete setup"
                     $wslAvailable = $true  # Still mark as available
                 }
             } elseif (-not $ubuntuDistroFound) {
+                Write-Host "[DEBUG] WSL Logic: Ubuntu distribution not found - ubuntuDistroFound=$ubuntuDistroFound" -ForegroundColor Magenta
                 if ($needsLinux) {
+                    Write-Host "[DEBUG] WSL Logic: Linux needed, installing Ubuntu 24.04 - needsLinux=$needsLinux" -ForegroundColor Magenta
                     Write-Info "Ubuntu 24.04 not found. Installing Ubuntu 24.04..."
                     
                     # Enhanced Ubuntu 24.04 installation with multiple methods
@@ -1035,6 +1151,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     # Method 1: Standard WSL distribution install
                     Write-Info "Attempting standard WSL Ubuntu 24.04 installation..."
                     try {
+                        Write-WSLCommand "wsl --install --distribution Ubuntu-24.04 --no-launch"
                         wsl --install --distribution Ubuntu-24.04 --no-launch
                         Write-Success "Ubuntu 24.04 installation initiated via WSL"
                         $distroInstallSuccess = $true
@@ -1044,6 +1161,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     
                     # Method 2: Microsoft Store via winget
                     if (-not $distroInstallSuccess -and (Test-Command "winget")) {
+                        Write-Host "[DEBUG] WSL Logic: Standard install failed, trying winget" -ForegroundColor Magenta
                         Write-Info "Attempting Microsoft Store Ubuntu 24.04 installation via winget..."
                         try {
                             winget install --id=Canonical.Ubuntu.2404 --source=msstore --accept-package-agreements --accept-source-agreements --silent
@@ -1052,10 +1170,13 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         } catch {
                             Write-Warning "Microsoft Store Ubuntu 24.04 installation via winget failed: $($_.Exception.Message)"
                         }
+                    } else {
+                        Write-Host "[DEBUG] WSL Logic: Winget method skipped - distroInstallSuccess=$distroInstallSuccess, winget available=$(Test-Command 'winget')" -ForegroundColor Magenta
                     }
                     
                     # Method 3: Direct download and install Ubuntu 24.04 appx
                     if (-not $distroInstallSuccess) {
+                        Write-Host "[DEBUG] WSL Logic: Winget failed, trying direct download" -ForegroundColor Magenta
                         Write-Info "Attempting direct Ubuntu 24.04 appx installation..."
                         try {
                             $ubuntuUrl = "https://aka.ms/wslubuntu2404"
@@ -1074,6 +1195,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     }
                     
                     if ($distroInstallSuccess) {
+                        Write-Host "[DEBUG] WSL Logic: Ubuntu installation completed, initializing" -ForegroundColor Magenta
                         Write-Success "Ubuntu 24.04 installation completed."
                         Write-Info "Initializing Ubuntu 24.04 distribution for first use..."
                         
@@ -1081,35 +1203,51 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
                         
                         if ($initSuccess) {
+                            Write-Host "[DEBUG] WSL Logic: Ubuntu initialization after install successful" -ForegroundColor Magenta
                             Write-Success "$ubuntuDistro is ready for use!"
                             $wslAvailable = $true
-                        
-                        if ($initSuccess) {
-                            Write-Success "Ubuntu 24.04 is ready for use!"
-                            $wslAvailable = $true
-            }
-                # Ensure Ubuntu is properly initialized
-                Write-Info "Verifying Ubuntu distribution is ready for use..."
-                $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
-                
+                            
+                            # Set as default distribution
+                            try {
+                                Write-WSLCommand "wsl -s $ubuntuDistro"
+                                wsl -s $ubuntuDistro 2>$null
+                                Write-Success "$ubuntuDistro set as default WSL distribution"
+                            } catch {
+                                Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
+                            }
+                        } else {
+                            Write-Host "[DEBUG] WSL Logic: Ubuntu initialization after install failed" -ForegroundColor Magenta
+                            Write-Warning "$ubuntuDistro installation completed but initialization failed"
+                        }
+                    } else {
+                        Write-Host "[DEBUG] WSL Logic: Ubuntu installation failed - distroInstallSuccess=$distroInstallSuccess" -ForegroundColor Magenta
+                        Write-Warning "All Ubuntu 24.04 installation methods failed"
+                    }
+                    
+                # Final verification step
+                $initSuccess = Test-WSLInstallation -DistributionName $ubuntuDistro
                 if ($initSuccess) {
+                    Write-Host "[DEBUG] WSL Logic: Final Ubuntu verification successful" -ForegroundColor Magenta
                     Write-Success "$ubuntuDistro is ready for use!"
                     $wslAvailable = $true
                     
                     # Set as default distribution
                     try {
+                        Write-WSLCommand "wsl -s $ubuntuDistro"
                         wsl -s $ubuntuDistro 2>$null
                         Write-Success "$ubuntuDistro set as default WSL distribution"
                     } catch {
                         Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
                     }
                 } else {
+                    Write-Host "[DEBUG] WSL Logic: Final Ubuntu verification failed" -ForegroundColor Magenta
                     Write-Warning "$ubuntuDistro found but not properly initialized"
                     Write-Info "You may need to manually launch Ubuntu to complete setup"
                     $wslAvailable = $true  # Still mark as available
                 }
             }
         } else {
+            Write-Host "[DEBUG] WSL Logic: Linux not needed, setting wslAvailable to false" -ForegroundColor Magenta
             $wslAvailable = $false
             }
             }
@@ -1118,6 +1256,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
     
     # Enhanced WSL development environment setup
         if ($wslAvailable -and $ubuntuDistro) {
+            Write-Host "[DEBUG] WSL Logic: WSL development environment setup conditions met - wslAvailable=$wslAvailable, ubuntuDistro=$ubuntuDistro" -ForegroundColor Magenta
             Write-Step "WSL Development Environment Setup"
             Write-Info "Starting WSL development environment configuration..."
             Write-Info "WSL Status: Available=$wslAvailable, Distribution=$ubuntuDistro"
@@ -1130,9 +1269,9 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 # Update package lists
                 Write-Info "Updating package lists..."
                 if ($null -eq $sudoPassword) {
-                    $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
+                    $updateResult = Invoke-WSLCommand -Command "sudo apt update" -Description "Updating package lists" -Distribution $ubuntuDistro
                 } else {
-                    $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro $sudoPassword
+                    $updateResult = Invoke-WSLCommand -Command "sudo apt update" -Description "Updating package lists" -Distribution $ubuntuDistro -SudoPassword $sudoPassword
                 }
                 
                 if ($updateResult) {
@@ -1143,7 +1282,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         
                         # Check for critical development packages
                         $criticalPackages = @("python3", "python3-pip", "python3-venv", "python3-dev", "build-essential", "git")
-                        $upgradeablePackages = Get-WSLCommandOutput "apt list --upgradeable 2>/dev/null | grep -v 'WARNING:' | awk -F'/' '{print `$1}'" $ubuntuDistro
+                        $upgradeablePackages = Get-WSLCommandOutput 'apt list --upgradeable 2>/dev/null | grep -v "WARNING:" | awk -F"/" "{print $1}"' $ubuntuDistro
                         $criticalUpgrades = @()
                         
                         if ($upgradeablePackages) {
@@ -1157,7 +1296,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         if ($criticalUpgrades.Count -gt 0) {
                             Write-Warning "⚠ Development tools with available upgrades detected:"
                             foreach ($pkg in $criticalUpgrades) {
-                                $currentVersion = Get-WSLCommandOutput "dpkg -l | grep '^ii' | grep '$pkg ' | awk '{print `$3}'" $ubuntuDistro
+                                $currentVersion = Get-WSLCommandOutput 'dpkg -l | grep "^ii" | grep "'"$pkg"'" | awk "{print $3}"' $ubuntuDistro
                                 Write-Host "  • $pkg (current: $currentVersion)" -ForegroundColor Yellow
                             }
                             Write-Info "`nUpgrading these packages may affect existing projects that depend on current versions."
@@ -1254,73 +1393,43 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         Write-Success "Found existing Git user email: $($existingGitEmail.Trim())"
                     }
                     
-                    # Get user input for Git configuration with existing values as defaults
-                    Write-Info "Git requires user configuration for commits and version control."
-                    $defaultName = if ($existingGitName -and $existingGitName.Trim() -ne "") { $existingGitName.Trim() } else { "" }
-                    $defaultEmail = if ($existingGitEmail -and $existingGitEmail.Trim() -ne "") { $existingGitEmail.Trim() } else { "" }
-                    
-                    $gitUserName = Get-UserInput "Enter your full name for Git commits" $defaultName
-                    $gitUserEmail = Get-UserInput "Enter your email address for Git commits" $defaultEmail
-                    
-                    if ($gitUserName -and $gitUserEmail) {
-                        Write-Info "Setting up Git configuration..."
-                        
-                        # Configure Git user settings with proper escaping for WSL
-                        $gitNameCommand = "git config --global user.name '$gitUserName'"
-                        $gitEmailCommand = "git config --global user.email '$gitUserEmail'"
-                        
-                        Invoke-WSLCommand $gitNameCommand "Setting Git user name" $ubuntuDistro
-                        Invoke-WSLCommand $gitEmailCommand "Setting Git user email" $ubuntuDistro
-                        
-                        # Configure Git default branch
-                        Invoke-WSLCommand "git config --global init.defaultBranch main" "Setting default branch to main" $ubuntuDistro
+                    # Set up Git configuration with predefined values
+                    Write-Info "Setting up Git configuration..."
+                    $gitUserEmail = "sakromera@microsoft.com"
+                    $gitUserName = "Sakr Omera"
+
+                    Invoke-WSLCommand -Description "Configuring complete Git setup" -Distribution $ubuntuDistro -ScriptBlock {
+                        # Configure Git user information
+                        git config --global user.email "sakromera@microsoft.com"
+                        git config --global user.name "Sakr Omera"
+                        git config --global init.defaultBranch "main"
                         
                         # Install Git LFS
-                        Write-Info "Installing Git Large File Storage (LFS)..."
-                        if ($null -eq $sudoPassword) {
-                            Invoke-WSLCommand "sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro
-                        } else {
-                            Invoke-WSLCommand "sudo apt-get install -y git-lfs" "Installing Git LFS" $ubuntuDistro $sudoPassword
-                        }
+                        sudo apt-get install -y git-lfs
                         
-                        # Configure Git credential helper to use Windows Git Credential Manager
-                        $gitCredentialPath = "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
-                        $gitCredentialExists = Get-WSLCommandOutput "test -f '$gitCredentialPath' && echo 'exists' || echo 'missing'" $ubuntuDistro
-                        
-                        if ($gitCredentialExists -eq "exists") {
-                            Write-Info "Configuring Git to use Windows Credential Manager..."
-                            Invoke-WSLCommand "git config --global credential.helper '$gitCredentialPath'" "Setting Git credential helper" $ubuntuDistro
-                            Invoke-WSLCommand "git config --global credential.useHttpPath true" "Enabling HTTP path credentials" $ubuntuDistro
-                        } else {
-                            Write-Warning "Windows Git Credential Manager not found. Git credentials will need manual setup."
-                            Write-Info "Consider installing Git for Windows to enable credential management."
-                        }
-                        
-                        # Configure merge tool to use VS Code
-                        Invoke-WSLCommand "git config --global merge.tool vscode" "Setting VS Code as merge tool" $ubuntuDistro
-                        Invoke-WSLCommand "git config --global mergetool.vscode.cmd 'code --wait'" "Configuring VS Code merge command" $ubuntuDistro
-                        
-                        # Verify Git configuration
-                        Write-Info "Verifying Git configuration..."
-                        $gitName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
-                        $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
-                        $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
-                        
-                        if ($gitName -and $gitEmail) {
-                            Write-Success "Git configured successfully:"
-                            Write-Info "  Name: $gitName"
-                            Write-Info "  Email: $gitEmail"
-                            Write-Info "  Default branch: $gitBranch"
-                            Write-Info "  Merge tool: VS Code"
-                            Write-Info "  Credential helper: Windows Git Credential Manager"
-                        } else {
-                            Write-Warning "Git configuration verification failed. You may need to configure Git manually."
-                        }
+                        # Configure Git credential manager and merge tool
+                        git config --global credential.helper "/mnt/c/Program\ Files/Git/mingw64/bin/git-credential-manager.exe"
+                        git config --global credential.helper "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
+                        git config --global credential.useHttpPath true
+                        git config --global merge.tool vscode
+                        git config --global mergetool.vscode.cmd 'code --wait `$MERGED'
+                    }
+
+                    # Verify Git configuration
+                    Write-Info "Verifying Git configuration..."
+                    $gitName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
+                    $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
+                    $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
+
+                    if ($gitName -and $gitEmail) {
+                        Write-Success "Git configured successfully:"
+                        Write-Info "  Name: $gitName"
+                        Write-Info "  Email: $gitEmail"
+                        Write-Info "  Default branch: $gitBranch"
+                        Write-Info "  Merge tool: VS Code"
+                        Write-Info "  Credential helper: Windows Git Credential Manager"
                     } else {
-                        Write-Warning "Git user name or email not provided. Skipping Git configuration."
-                        Write-Info "You can configure Git later using:"
-                        Write-Info "  git config --global user.name 'Your Name'"
-                        Write-Info "  git config --global user.email 'your.email@example.com'"
+                        Write-Warning "Git configuration verification failed. You may need to configure Git manually."
                     }
                     
                     # Clear sudo password from memory for security
@@ -1330,25 +1439,32 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     }
                 }
             }
+        } else {
+            Write-Host "[DEBUG] WSL Logic: WSL development environment setup skipped - wslAvailable=$wslAvailable, ubuntuDistro=$ubuntuDistro" -ForegroundColor Magenta
         }
     }
-}
 
 if ($needsLinux) {
+        Write-Host "[DEBUG] WSL Logic: Environment check - Linux is required - needsLinux=$needsLinux, selectedLoop=$($selectedLoop.Name)" -ForegroundColor Magenta
         if (-not $wslAvailable) {
+            Write-Host "[DEBUG] WSL Logic: ERROR - Linux required but WSL not available - wslAvailable=$wslAvailable" -ForegroundColor Red
             Write-Error "Selected loop '$($selectedLoop.Name)' requires WSL/Linux environment, but WSL is not available."
             Write-Info "Please install WSL or choose a Windows-compatible loop."
             exit 1
         }
+        Write-Host "[DEBUG] WSL Logic: Using WSL/Linux environment - wslAvailable=$wslAvailable" -ForegroundColor Magenta
         Write-Success "Environment: WSL/Linux (required for $($selectedLoop.Name))"
         Write-Info "This loop requires Linux development environment"
     } elseif ($isWindowsOnly) {
+        Write-Host "[DEBUG] WSL Logic: Environment check - Windows-only required - isWindowsOnly=$isWindowsOnly, selectedLoop=$($selectedLoop.Name)" -ForegroundColor Magenta
         $needsLinux = $false
         Write-Success "Environment: Windows native (required for $($selectedLoop.Name))"
         Write-Info "This loop is designed for Windows development"
     } else {
+        Write-Host "[DEBUG] WSL Logic: Environment check - Universal loop, user choice - selectedLoop=$($selectedLoop.Name), needsLinux=$needsLinux, isWindowsOnly=$isWindowsOnly" -ForegroundColor Magenta
         # Universal loop - let user choose if WSL is available
         if ($wslAvailable) {
+            Write-Host "[DEBUG] WSL Logic: WSL available for universal loop, offering choice - wslAvailable=$wslAvailable" -ForegroundColor Magenta
             Write-Info "`nThis loop supports both environments. Choose your preference:"
             Write-Host "  1. WSL/Linux (recommended for modern development)" -ForegroundColor Green
             Write-Host "  2. Windows native (enterprise/.NET Framework projects)" -ForegroundColor White
@@ -1357,13 +1473,16 @@ if ($needsLinux) {
             $needsLinux = ($envChoice -eq "1")
             
             if ($needsLinux) {
+                Write-Host "[DEBUG] WSL Logic: User chose WSL/Linux environment - envChoice=$envChoice, needsLinux=$needsLinux" -ForegroundColor Magenta
                 Write-Success "Environment: WSL/Linux (user preference)"
                 Write-Info "Using Linux development environment"
             } else {
+                Write-Host "[DEBUG] WSL Logic: User chose Windows native environment - envChoice=$envChoice, needsLinux=$needsLinux" -ForegroundColor Magenta
                 Write-Success "Environment: Windows native (user preference)" 
                 Write-Info "Using Windows development environment"
             }
         } else {
+            Write-Host "[DEBUG] WSL Logic: WSL not available for universal loop, using Windows - wslAvailable=$wslAvailable" -ForegroundColor Magenta
             $needsLinux = $false
             Write-Success "Environment: Windows native (WSL not available)"
             Write-Info "Using Windows development environment"
@@ -1406,8 +1525,9 @@ try {
             # Create directory in WSL and check for existing projects
         Write-Info "Creating application directory in WSL: $appDirResolved"
             
-            # Check if directory already exists and handle accordingly
+        # Check if directory already exists and handle accordingly
         $dirCheckCommand = "if [ -d '$appDirResolved' ]; then echo 'EXISTS'; else echo 'NOT_EXISTS'; fi"
+        Write-WSLCommand "wsl -- bash -c `"$dirCheckCommand`""
         $dirExists = wsl -- bash -c $dirCheckCommand
             
             $shouldInitialize = $true
@@ -1416,6 +1536,7 @@ try {
                 
                 # Check if it's already a StrangeLoop project
                 $isStrangeLoopCommand = "cd '$appDirResolved' && if [ -d './strangeloop' ]; then echo 'YES'; else echo 'NO'; fi"
+                Write-WSLCommand "wsl -- bash -c `"$isStrangeLoopCommand`""
                 $isStrangeLoopProject = wsl -- bash -c $isStrangeLoopCommand
                 
                 if ($isStrangeLoopProject -eq "YES") {
@@ -1427,11 +1548,13 @@ try {
                     } else {
                         Write-Info "Cleaning existing project and reinitializing..."
                         $cleanCommand = "cd '$appDirResolved' && rm -rf ./* ./.*[^.] 2>/dev/null || true"
+                        Write-WSLCommand "wsl -- bash -c `"$cleanCommand`""
                         wsl -- bash -c $cleanCommand
                     }
                 } else {
                     # Directory exists but not a StrangeLoop project
                     $hasFilesCommand = "cd '$appDirResolved' && find . -maxdepth 1 -type f | wc -l"
+                    Write-WSLCommand "wsl -- bash -c `"$hasFilesCommand`""
                     $hasFiles = wsl -- bash -c $hasFilesCommand
                     if ($hasFiles -and [int]$hasFiles -gt 0) {
                         Write-Warning "Directory contains $hasFiles files"
@@ -1444,6 +1567,7 @@ try {
                 }
             } else {
                 # Create directory
+                Write-WSLCommand "wsl -- bash -c `"mkdir -p '$appDirResolved'`""
                 wsl -- bash -c "mkdir -p '$appDirResolved'"
             }
             
@@ -1452,7 +1576,7 @@ try {
                 Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
                 $initCommand = "cd '$appDirResolved' && strangeloop init --loop $($selectedLoop.Name)"
                 Write-Info "initCommand: $initCommand"
-                Write-Info "Running: wsl -- bash -c \"$initCommand\""
+                Write-WSLCommand "wsl -- bash -c `"$initCommand`""
                 $loopResult = wsl -- bash -c $initCommand
                 Write-Host "WSL loop init output:" -ForegroundColor Yellow
                 if ($loopResult) { Write-Host "$loopResult" -ForegroundColor Gray }
@@ -1468,14 +1592,18 @@ try {
                 }
                 $projectCreated = $true
                 
+               
+                
                 # Update settings.yaml with project name
                 Write-Info "Updating project settings..."
                 $updateCommand = "cd '$appDirResolved' && if [ -f './strangeloop/settings.yaml' ]; then sed -i 's/^name:.*/name: $appName/' './strangeloop/settings.yaml'; fi"
+                Write-WSLCommand "wsl -- bash -c `"$updateCommand`""
                 wsl -- bash -c $updateCommand
                 
                 # Run strangeloop recurse to apply configuration changes
                 Write-Info "Applying configuration changes..."
                 $recurseCommand = "cd '$appDirResolved' && strangeloop recurse"
+                Write-WSLCommand "wsl -- bash -c `"$recurseCommand`""
                 wsl -- bash -c $recurseCommand
                 
                 # Provide access instructions
@@ -1592,7 +1720,7 @@ try {
         Write-Error "Loop initialization failed: $($_.Exception.Message)"
         exit 1
     }
-}
+
 
 #endregion
 
