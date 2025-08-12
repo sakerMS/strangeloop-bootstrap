@@ -50,12 +50,14 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Unified Architecture                       ║
+║                    Version 7.0 - Enhanced Enterprise         ║
+║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
 
 Write-Host " " -ForegroundColor White
 Write-Host "StrangeLoop CLI Bootstrap Setup (Complete)" -ForegroundColor White
+Write-Host "Version 7.0 - Enhanced Enterprise Edition" -ForegroundColor Cyan
 Write-Host "This script will install and configure StrangeLoop CLI with environment-specific delegation" -ForegroundColor Gray
 Write-Host " " -ForegroundColor White
 
