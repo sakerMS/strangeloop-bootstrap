@@ -1845,6 +1845,12 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
                     $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
 
+                    Write-Info "  Name: $gitName"
+                    Write-Info "  Email: $gitEmail"
+                    Write-Info "  Default branch: $gitBranch"
+                    Write-Info "  Merge tool: VS Code"
+                    Write-Info "  Credential helper: Windows Git Credential Manager"
+
                     if ($gitName -and $gitEmail) {
                         Write-Success "Git configured successfully:"
                         Write-Info "  Name: $gitName"
