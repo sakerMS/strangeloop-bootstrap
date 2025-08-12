@@ -840,14 +840,78 @@ if (Test-Command "git") {
                 
                 if (-not $isAdmin) {
                     Write-Warning "Chocolatey requires administrator privileges for package installation."
-                    Write-Info "Skipping Chocolatey and using direct download method..."
+                    Write-Info "Launching elevated PowerShell window to install Git LFS..."
+                    
+                    try {
+                        # Create a script to run in elevated session
+                        $elevatedScript = @"
+Write-Host "Installing Git LFS via Chocolatey (Elevated Session)..." -ForegroundColor Green
+choco install git-lfs -y
+if (`$LASTEXITCODE -eq 0) {
+    Write-Host "Git LFS installed successfully via Chocolatey" -ForegroundColor Green
+} else {
+    Write-Host "Git LFS installation failed via Chocolatey" -ForegroundColor Red
+}
+Write-Host "Press any key to close this window..." -ForegroundColor Yellow
+`$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+"@
+                        
+                        # Save the script to a temporary file
+                        $tempScript = "$env:TEMP\install-git-lfs-elevated.ps1"
+                        $elevatedScript | Out-File -FilePath $tempScript -Encoding UTF8
+                        
+                        # Launch elevated PowerShell with the script
+                        $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+                        $processInfo.FileName = "powershell.exe"
+                        $processInfo.Arguments = "-ExecutionPolicy Bypass -File `"$tempScript`""
+                        $processInfo.Verb = "runas"
+                        $processInfo.UseShellExecute = $true
+                        
+                        Write-Host "Please complete the installation in the elevated PowerShell window..." -ForegroundColor Yellow
+                        $process = [System.Diagnostics.Process]::Start($processInfo)
+                        $process.WaitForExit()
+                        
+                        # Clean up temp script
+                        Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                        
+                        # Check if installation was successful
+                        Start-Sleep -Seconds 2
+                        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+                        
+                        if (Test-Command "git-lfs") {
+                            Write-Success "Git LFS installed successfully via elevated Chocolatey"
+                        } else {
+                            Write-Warning "Git LFS installation via elevated Chocolatey may have failed. Trying direct download..."
+                            throw "Elevated installation check failed"
+                        }
+                    } catch {
+                        Write-Warning "Elevated Chocolatey installation failed or was cancelled: $($_.Exception.Message)"
+                        Write-Info "Falling back to direct download method..."
+                        
+                        # Direct download fallback
+                        Write-Info "Installing Git LFS via direct download..."
+                        $gitLfsUrl = "https://github.com/git-lfs/git-lfs/releases/download/v3.4.0/git-lfs-windows-amd64-v3.4.0.exe"
+                        $gitLfsInstaller = "$env:TEMP\git-lfs-installer.exe"
+                        Invoke-WebRequest -Uri $gitLfsUrl -OutFile $gitLfsInstaller -UseBasicParsing
+                        Start-Process -FilePath $gitLfsInstaller -ArgumentList "/SILENT" -Wait
+                        Remove-Item $gitLfsInstaller -Force -ErrorAction SilentlyContinue
+                    }
                 } else {
+                    # Already running as admin, proceed with Chocolatey
                     $chocoResult = choco install git-lfs -y 2>&1
                     if ($LASTEXITCODE -eq 0) {
                         Write-Success "Git LFS installed via Chocolatey"
                     } else {
                         Write-Warning "Chocolatey installation failed: $chocoResult"
                         Write-Info "Falling back to direct download method..."
+                        
+                        # Direct download fallback
+                        Write-Info "Installing Git LFS via direct download..."
+                        $gitLfsUrl = "https://github.com/git-lfs/git-lfs/releases/download/v3.4.0/git-lfs-windows-amd64-v3.4.0.exe"
+                        $gitLfsInstaller = "$env:TEMP\git-lfs-installer.exe"
+                        Invoke-WebRequest -Uri $gitLfsUrl -OutFile $gitLfsInstaller -UseBasicParsing
+                        Start-Process -FilePath $gitLfsInstaller -ArgumentList "/SILENT" -Wait
+                        Remove-Item $gitLfsInstaller -Force -ErrorAction SilentlyContinue
                     }
                 }
             } else {
