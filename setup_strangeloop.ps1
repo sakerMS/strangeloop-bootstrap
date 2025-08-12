@@ -371,6 +371,106 @@ function Resolve-WSLPath {
     return $Path
 }
 
+function Install-RecommendedVSCodeExtensions {
+    param([bool]$IsWSL = $false)
+    
+    Write-Info "Checking for recommended VS Code extensions..."
+    
+    try {
+        # Check if VS Code is installed
+        if (-not (Test-Command "code")) {
+            Write-Warning "VS Code CLI not found in PATH. Skipping extension check."
+            return $false
+        }
+        
+        # Get list of currently installed extensions
+        $installedExtensions = @(code --list-extensions 2>$null)
+        
+        # Define recommended extensions for StrangeLoop development
+        $recommendedExtensions = @(
+            @{ Id = "ms-python.python"; Name = "Python"; Required = $true },
+            @{ Id = "ms-vscode.powershell"; Name = "PowerShell"; Required = $false },
+            @{ Id = "ms-dotnettools.csharp"; Name = "C# Dev Kit"; Required = $false },
+            @{ Id = "bradlc.vscode-tailwindcss"; Name = "Tailwind CSS IntelliSense"; Required = $false }
+        )
+        
+        # Add WSL extension if working with WSL
+        if ($IsWSL) {
+            $recommendedExtensions += @{ Id = "ms-vscode-remote.remote-wsl"; Name = "WSL"; Required = $true }
+        }
+        
+        $extensionsToInstall = @()
+        
+        foreach ($ext in $recommendedExtensions) {
+            if ($installedExtensions -notcontains $ext.Id) {
+                if ($ext.Required) {
+                    $extensionsToInstall += $ext
+                } else {
+                    Write-Info "Optional extension available: $($ext.Name) ($($ext.Id))"
+                }
+            } else {
+                Write-Success "$($ext.Name) extension is already installed"
+            }
+        }
+        
+        # Install required extensions
+        foreach ($ext in $extensionsToInstall) {
+            if ($ext.Required) {
+                Write-Info "Installing required extension: $($ext.Name)..."
+                $installResult = code --install-extension $ext.Id --force 2>&1
+                
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success "$($ext.Name) extension installed successfully"
+                } else {
+                    Write-Warning "Failed to install $($ext.Name) extension"
+                    Write-Info "Install result: $installResult"
+                }
+            }
+        }
+        
+        return $true
+    } catch {
+        Write-Warning "Error checking/installing extensions: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Install-VSCodeWSLExtension {
+    Write-Info "Checking for WSL extension in VS Code..."
+    
+    try {
+        # Check if VS Code is installed
+        if (-not (Test-Command "code")) {
+            Write-Warning "VS Code CLI not found in PATH. Please ensure VS Code is installed."
+            return $false
+        }
+        
+        # Check if WSL extension is already installed
+        $installedExtensions = code --list-extensions 2>$null
+        if ($installedExtensions -contains "ms-vscode-remote.remote-wsl") {
+            Write-Success "WSL extension is already installed"
+            return $true
+        }
+        
+        Write-Info "Installing WSL extension for VS Code..."
+        $installResult = code --install-extension ms-vscode-remote.remote-wsl --force 2>&1
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "WSL extension installed successfully"
+            return $true
+        } else {
+            Write-Warning "Failed to install WSL extension automatically"
+            Write-Info "Install result: $installResult"
+            Write-Info "You can manually install it from: https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-wsl"
+            return $false
+        }
+    } catch {
+        Write-Warning "Error checking/installing WSL extension: $($_.Exception.Message)"
+        Write-Info "You can manually install the WSL extension from VS Code marketplace"
+        return $false
+    }
+}
+
 function Open-VSCode {
     param(
         [string]$Path,
@@ -379,6 +479,10 @@ function Open-VSCode {
     )
     
     Write-Info "Opening VS Code for path: $Path"
+    
+    # Check and install recommended VS Code extensions
+    Write-Info "Checking VS Code extensions for optimal development experience..."
+    Install-RecommendedVSCodeExtensions -IsWSL:$IsWSL | Out-Null
     
     try {
         if ($IsWSL) {
@@ -399,6 +503,7 @@ function Open-VSCode {
         } else {
             # For Windows, use standard path
             Write-Info "Opening in Windows mode"
+            Write-Info "Tip: Consider installing VS Code WSL extension for future WSL development"
             Start-Process -FilePath "code" -ArgumentList @($Path) -NoNewWindow
         }
         Write-Success "VS Code launched for project"
