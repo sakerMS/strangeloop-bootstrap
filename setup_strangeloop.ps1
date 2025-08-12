@@ -952,6 +952,49 @@ if (Test-Command "az") {
     }
 }
 
+# Azure Login
+Write-Info "Checking Azure authentication status..."
+$azAccountList = az account list --output json 2>$null
+if ($azAccountList -and $azAccountList -ne "[]") {
+    $accounts = $azAccountList | ConvertFrom-Json
+    $defaultAccount = $accounts | Where-Object { $_.isDefault -eq $true }
+    if ($defaultAccount) {
+        Write-Success "Already logged in to Azure as: $($defaultAccount.user.name)"
+        Write-Info "Subscription: $($defaultAccount.name) ($($defaultAccount.id))"
+    } else {
+        Write-Success "Logged in to Azure with multiple accounts"
+        Write-Info "Available accounts: $($accounts.Count)"
+    }
+} else {
+    Write-Info "Not logged in to Azure - starting login process..."
+    Write-Host "Please complete the Azure login in your browser..." -ForegroundColor Yellow
+    
+    try {
+        az login
+        
+        # Verify login was successful
+        $azAccountList = az account list --output json 2>$null
+        if ($azAccountList -and $azAccountList -ne "[]") {
+            $accounts = $azAccountList | ConvertFrom-Json
+            $defaultAccount = $accounts | Where-Object { $_.isDefault -eq $true }
+            if ($defaultAccount) {
+                Write-Success "Successfully logged in to Azure as: $($defaultAccount.user.name)"
+                Write-Info "Subscription: $($defaultAccount.name) ($($defaultAccount.id))"
+            } else {
+                Write-Success "Successfully logged in to Azure"
+                Write-Info "Available accounts: $($accounts.Count)"
+            }
+        } else {
+            throw "Login verification failed"
+        }
+    } catch {
+        Write-Error "Azure login failed: $($_.Exception.Message)"
+        Write-Info "Please try logging in manually with: az login"
+        Write-Info "Then run this script again"
+        exit 1
+    }
+}
+
 # Check if StrangeLoop is already installed
 if (Test-Command "strangeloop") {
     Write-Success "StrangeLoop CLI is already installed"
