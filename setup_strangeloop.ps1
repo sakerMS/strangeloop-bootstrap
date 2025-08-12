@@ -829,9 +829,15 @@ foreach ($tool in $requiredTools) {
     }
 }
 
-# Configure Git for development
+#endregion
+
+#region Git Credential Capture
+
+# Capture Git credentials once at the beginning for use throughout the script
+Write-Step "Git User Configuration"
+
 if (Test-Command "git") {
-    Write-Step "Git Configuration"
+    Write-Info "Configuring Git user information for use throughout setup..."
     
     # Get current Git configuration
     $currentEmail = git config --global user.email 2>$null
@@ -839,21 +845,61 @@ if (Test-Command "git") {
     
     # Prompt for Git user information with defaults from existing config
     if ([string]::IsNullOrWhiteSpace($currentEmail)) {
-        $gitEmail = Get-UserInput "Enter your Git email address"
+        $global:GitUserEmail = Get-UserInput "Enter your Git email address"
     } else {
-        $gitEmail = Get-UserInput "Git email address" $currentEmail
+        $global:GitUserEmail = Get-UserInput "Git email address" $currentEmail
     }
     
     if ([string]::IsNullOrWhiteSpace($currentName)) {
-        $gitName = Get-UserInput "Enter your Git display name"
+        $global:GitUserName = Get-UserInput "Enter your Git display name"
     } else {
-        $gitName = Get-UserInput "Git display name" $currentName
+        $global:GitUserName = Get-UserInput "Git display name" $currentName
     }
     
-    # Configure Git settings
+    Write-Success "Git user configured: $global:GitUserName <$global:GitUserEmail>"
+    Write-Info "These credentials will be used for both Windows and WSL Git configuration"
+} else {
+    Write-Warning "Git not found - will configure credentials after Git installation"
+    $global:GitUserEmail = ""
+    $global:GitUserName = ""
+}
+
+#endregion
+
+#region Git Configuration
+
+# Configure Git for development
+if (Test-Command "git") {
+    Write-Step "Git Configuration"
+    
+    # If Git credentials weren't captured earlier (Git wasn't available), capture them now
+    if ([string]::IsNullOrWhiteSpace($global:GitUserEmail) -or [string]::IsNullOrWhiteSpace($global:GitUserName)) {
+        Write-Info "Git credentials not captured earlier - configuring now..."
+        
+        # Get current Git configuration
+        $currentEmail = git config --global user.email 2>$null
+        $currentName = git config --global user.name 2>$null
+        
+        # Prompt for Git user information with defaults from existing config
+        if ([string]::IsNullOrWhiteSpace($currentEmail)) {
+            $global:GitUserEmail = Get-UserInput "Enter your Git email address"
+        } else {
+            $global:GitUserEmail = Get-UserInput "Git email address" $currentEmail
+        }
+        
+        if ([string]::IsNullOrWhiteSpace($currentName)) {
+            $global:GitUserName = Get-UserInput "Enter your Git display name"
+        } else {
+            $global:GitUserName = Get-UserInput "Git display name" $currentName
+        }
+        
+        Write-Success "Git user configured: $global:GitUserName <$global:GitUserEmail>"
+    }
+    
+    # Use the globally captured Git credentials
     Write-Info "Configuring Git settings..."
-    git config --global user.email $gitEmail
-    git config --global user.name $gitName
+    git config --global user.email $global:GitUserEmail
+    git config --global user.name $global:GitUserName
     git config --global init.defaultBranch "main"
     
     # Clear any existing credential helpers and set the correct one
@@ -886,7 +932,7 @@ if (Test-Command "git") {
     git config --global mergetool.vscode.cmd 'code --wait $MERGED'
     git config --global core.longpaths true
     
-    Write-Success "Git configured with user: $gitName <$gitEmail>"
+    Write-Success "Git configured with user: $global:GitUserName <$global:GitUserEmail>"
     
     # Install Git LFS if not available
     if (-not (Test-Command "git-lfs")) {
@@ -1817,13 +1863,15 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         Write-Success "Found existing Git user email: $($existingGitEmail.Trim())"
                     }
                     
-                    # Set up Git configuration using Windows Git config values
+                    # Set up Git configuration using globally captured credentials
                     Write-Info "Setting up Git configuration..."
-                    $gitUserEmail = git config --global user.email 2>$null
-                    $gitUserName = git config --global user.name 2>$null
+
+                    # Pass the global variables to the WSL command
+                    $gitUserEmail = $global:GitUserEmail
+                    $gitUserName = $global:GitUserName
 
                     Invoke-WSLCommand -Description "Configuring complete Git setup" -Distribution $ubuntuDistro -ScriptBlock {
-                        # Configure Git user information using Windows config
+                        # Configure Git user information using globally captured credentials
                         git config --global user.email "$gitUserEmail"
                         git config --global user.name "$gitUserName"
                         git config --global init.defaultBranch "main"
