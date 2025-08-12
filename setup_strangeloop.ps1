@@ -759,7 +759,7 @@ Invoke-CommandWithDuration -Description "Checking execution policy" -ScriptBlock
 }
     
 # Check basic tools
-$requiredTools = @("git", "curl")
+$requiredTools = @("git", "curl", "az")
 foreach ($tool in $requiredTools) {
     if (Test-Command $tool) {
         Write-Success "$tool is available"
@@ -773,6 +773,58 @@ foreach ($tool in $requiredTools) {
 #region StrangeLoop Installation
 
 Write-Step "Azure Authentication and StrangeLoop Installation"
+
+# Check and install Azure CLI if needed
+if (Test-Command "az") {
+    Write-Success "Azure CLI is already installed"
+    $azVersion = az version --output tsv --query '"azure-cli"' 2>$null
+    if ($azVersion) {
+        Write-Info "Current version: $azVersion"
+    }
+} else {
+    Write-Info "Azure CLI not found - installing now..."
+    try {
+        # Download and install Azure CLI
+        Write-Info "Downloading Azure CLI installer..."
+        $azCliUrl = "https://aka.ms/installazurecliwindows"
+        $azCliInstaller = "$env:TEMP\AzureCLI.msi"
+        
+        Invoke-WebRequest -Uri $azCliUrl -OutFile $azCliInstaller -UseBasicParsing
+        Write-Success "Azure CLI installer downloaded"
+        
+        # Install Azure CLI
+        Write-Info "Installing Azure CLI (this may take a few minutes)..."
+        Start-Process msiexec.exe -ArgumentList "/i", $azCliInstaller, "/quiet", "/norestart" -Wait -NoNewWindow
+        
+        # Cleanup
+        Remove-Item $azCliInstaller -Force -ErrorAction SilentlyContinue
+        
+        # Refresh PATH to pick up Azure CLI
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+        $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+        $env:Path = $machinePath + ";" + $userPath
+        
+        # Verify installation
+        if (Test-Command "az") {
+            Write-Success "Azure CLI installed successfully"
+            $azVersion = az version --output tsv --query '"azure-cli"' 2>$null
+            if ($azVersion) {
+                Write-Info "Installed version: $azVersion"
+            }
+        } else {
+            Write-Warning "Azure CLI installation completed but 'az' command not found in PATH"
+            Write-Info "Please restart your terminal and run this script again"
+            exit 1
+        }
+    } catch {
+        Write-Error "Azure CLI installation failed: $($_.Exception.Message)"
+        Write-Info "Please install Azure CLI manually:"
+        Write-Info "1. Download from: https://aka.ms/installazurecliwindows"
+        Write-Info "2. Run the installer"
+        Write-Info "3. Restart your terminal and run this script again"
+        exit 1
+    }
+}
 
 # Check if StrangeLoop is already installed
 if (Test-Command "strangeloop") {
