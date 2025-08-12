@@ -24,7 +24,7 @@ $script:TestSuites = @(
     @{
         Name = "Comprehensive Integration Tests"
         Script = "test_setup_strangeloop.ps1"
-        Description = "Full system integration and compatibility tests"
+        Description = "Full system integration and compatibility tests including Ubuntu 24.04 detection"
         Color = "Blue"
     },
     @{

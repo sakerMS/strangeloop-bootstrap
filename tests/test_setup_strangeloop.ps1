@@ -158,6 +158,68 @@ function Invoke-SafeCommand {
     }
 }
 
+# Ubuntu 24.04 Detection Test Function (from scripts/test_ubuntu_detection.ps1)
+function Test-Ubuntu24Detection {
+    $availableUbuntuDistros = @("Ubuntu-24.04", "Ubuntu-22.04", "Ubuntu-20.04", "Ubuntu")
+    $ubuntuDistro = $null
+    $detectionDetails = @()
+
+    try {
+        # First, try to get the default distribution from wsl --status
+        $wslStatus = wsl --status 2>$null
+        if ($wslStatus) {
+            $detectionDetails += "WSL status available"
+            $defaultDistroLine = $wslStatus | Where-Object { $_ -match "Default Distribution:" }
+            if ($defaultDistroLine) {
+                $defaultDistro = ($defaultDistroLine -split ":")[1].Trim()
+                $detectionDetails += "Default distribution: '$defaultDistro'"
+                
+                if ($defaultDistro -and $availableUbuntuDistros -contains $defaultDistro) {
+                    $ubuntuDistro = $defaultDistro
+                    $detectionDetails += "Found Ubuntu in default: $ubuntuDistro"
+                }
+            }
+        }
+        
+        # If default isn't Ubuntu, check the full list
+        if (-not $ubuntuDistro) {
+            $distributions = wsl --list --quiet 2>$null
+            if ($distributions) {
+                $detectionDetails += "Checking distribution list"
+                foreach ($distroName in $availableUbuntuDistros) {
+                    foreach ($line in $distributions) {
+                        if ($line -and $line -notmatch "^Windows Subsystem") {
+                            $cleanLine = $line -replace '[^\x20-\x7F]', ''
+                            if ($cleanLine -like "*$distroName*") {
+                                $ubuntuDistro = $distroName
+                                $detectionDetails += "Found Ubuntu in list: $ubuntuDistro"
+                                break
+                            }
+                        }
+                    }
+                    if ($ubuntuDistro) { break }
+                }
+            }
+        }
+    } catch {
+        $detectionDetails += "Error: $($_.Exception.Message)"
+    }
+
+    $success = $null -ne $ubuntuDistro
+    $message = if ($success) { 
+        "Detected: $ubuntuDistro | Details: $($detectionDetails -join '; ')" 
+    } else { 
+        "No Ubuntu found | Details: $($detectionDetails -join '; ')" 
+    }
+
+    return @{
+        Success = $success
+        Distribution = $ubuntuDistro
+        Message = $message
+        Details = $detectionDetails
+    }
+}
+
 #endregion
 
 #region Basic Script Tests
@@ -321,8 +383,12 @@ if (-not $SkipWSLTests) {
             $hasDistros = $LASTEXITCODE -eq 0 -and $wslDistros
             Write-TestResult "WSL distributions available" $hasDistros "Distros: $($wslDistros -join ', ')"
             
-            # Test Ubuntu specifically
+            # Enhanced Ubuntu 24.04 detection test (incorporating test_ubuntu_detection logic)
             if ($hasDistros) {
+                $ubuntuDetected = Test-Ubuntu24Detection
+                Write-TestResult "Ubuntu 24.04 detection logic" $ubuntuDetected.Success $ubuntuDetected.Message
+                
+                # Legacy Ubuntu check for backward compatibility
                 $hasUbuntu = $wslDistros -contains "Ubuntu-24.04" -or $wslDistros -contains "Ubuntu"
                 Write-TestResult "Ubuntu distribution available" $hasUbuntu
             }
@@ -634,7 +700,7 @@ if ($script:TestResults.Failed -eq 0) {
 }
 
 Write-Host "`nTest completed at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
-Write-Host ("=" * 80) -ForegroundColor Blue
+Write-Host "================================================================================" -ForegroundColor Blue
 
 # Exit with appropriate code
 exit $(if ($script:TestResults.Failed -eq 0) { 0 } else { 1 })

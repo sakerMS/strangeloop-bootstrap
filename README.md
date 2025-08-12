@@ -1,7 +1,31 @@
 # St## 🎯 Repository Structure
 
 ```
+s```
 strangeloop-bootstrap/
+├── setup_strangeloop.ps1                # ⭐ Complete Standalone Setup (Single Entry Point)
+├── reset_strangeloop.ps1                # 🔄 RESET SCRIPT - Safely revert setup changes
+├── scripts/                             # 📂 Utility Scripts
+│   ├── test_ubuntu_detection.ps1        # 🔍 Ubun| File | Purpose | User Facing | Architecture |
+|------|---------|-------------|-------------|
+| `setup_strangeloop.ps1` | Complete unified setup | ✅ Download & Run | **Minimalist (no parameters)** |
+| `reset_strangeloop.ps1` | **SAFE RESET - Remove setup changes only** | 🔄 **Essential for troubleshooting** | **Project-safe cleanup** |
+| `scripts/test_ubuntu_detection.ps1` | Ubuntu detection testing utility | 🔍 **Standalone testing** | **Diagnostic tool** |
+| `tests/test_setup_strangeloop.ps1` | Integration tests with Ubuntu detection | 🧪 **Comprehensive testing** | **Test framework** |
+| `tests/run_all_tests.ps1` | Test runner with reporting | 🎯 **Automated testing** | **Test automation** |
+| `docs/user_guide.md` | User guide | 📚 Documentation | Documentation |
+| `docs/deployment_guide.md` | Deployment guide | 📚 Documentation | Documentation |tion testing utility
+│   └── README.md                        # 📚 Scripts documentation
+├── tests/                               # 🧪 Comprehensive Test Suite
+│   ├── test_setup_strangeloop.ps1       # 🔬 Integration tests with Ubuntu detection
+│   ├── test_setup_functions.ps1         # ⚙️ Unit function tests
+│   ├── run_all_tests.ps1               # 🎯 Test runner with reporting
+│   └── README.md                        # 📚 Testing documentation
+├── docs/                                # 📂 Documentation
+│   ├── user_guide.md                    # 📚 User installation guide
+│   └── deployment_guide.md              # 📚 GitHub deployment guide
+└── README.md                            # 📖 This file
+```ootstrap/
 ├── setup_strangeloop.ps1                # ⭐ C## 📁 Deployment Structure
 
 When deployed to GitHub, the structure is:
@@ -95,6 +119,7 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bo
   - Always checks prerequisites (PowerShell, Git, curl)
   - Always installs/updates StrangeLoop CLI to latest version
   - Always installs/updates all required packages
+  - **Smart Ubuntu Detection** - Automatically detects existing Ubuntu 24.04 distribution
   - Interactive loop selection with smart environment detection
   - Example: `.\setup_strangeloop.ps1`
 

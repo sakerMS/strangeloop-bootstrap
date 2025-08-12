@@ -174,7 +174,7 @@ function Test-WSLInstallation {
                 return $false
             }
         } else {
-            Write-Warning "$DistributionName distribution not found"
+            Write-Info "$DistributionName distribution not found in current WSL installations"
             return $false
         }
     } catch {
@@ -841,12 +841,56 @@ $isWindowsOnly = $windowsCompatibleLoops -contains $selectedLoop.Name
 
 # Check and setup WSL environment when needed
 $wslAvailable = $false
+
+# StrangeLoop CLI specifically requires Ubuntu 24.04 LTS
+# No fallback to other Ubuntu versions to ensure consistency
 $ubuntuDistro = "Ubuntu-24.04"
 
 if ($needsLinux -or (-not $isWindowsOnly)) {
     Write-Step "WSL Setup and Availability Check"
     
-    # Check if WSL is installed and functional
+    # Check for existing Ubuntu 24.04 distribution first
+    try {
+        Write-Info "Checking for existing Ubuntu 24.04 distribution..."
+        
+        # First, try to get the default distribution from wsl --status
+        $wslStatus = wsl --status 2>$null
+        if ($wslStatus) {
+            $defaultDistroLine = $wslStatus | Where-Object { $_ -like "*Default Distribution:*" }
+            if ($defaultDistroLine) {
+                $defaultDistro = ($defaultDistroLine -split ":")[1].Trim()
+                if ($defaultDistro -eq "Ubuntu-24.04") {
+                    Write-Success "Found default Ubuntu 24.04 distribution"
+                } else {
+                    Write-Info "Default distribution is '$defaultDistro', checking for Ubuntu 24.04 in list..."
+                }
+            }
+        }
+        
+        # Check the full distribution list for Ubuntu 24.04
+        $distributions = wsl --list --quiet 2>$null
+        $ubuntu2404Found = $false
+        if ($distributions) {
+            foreach ($line in $distributions) {
+                if ($line -and $line -notmatch "^Windows Subsystem") {
+                    $cleanLine = $line -replace '[^\x20-\x7F]', ''
+                    if ($cleanLine -like "*Ubuntu-24.04*") {
+                        $ubuntu2404Found = $true
+                        Write-Success "Found Ubuntu 24.04 distribution in WSL"
+                        break
+                    }
+                }
+            }
+        }
+        
+        if (-not $ubuntu2404Found) {
+            Write-Info "Ubuntu 24.04 not found in current WSL installations"
+        }
+    } catch {
+        Write-Warning "Could not detect Ubuntu 24.04 distribution: $($_.Exception.Message)"
+    }
+    
+    # Check if WSL is installed and functional with Ubuntu 24.04
     $wslFullyFunctional = Test-WSLInstallation -DistributionName $ubuntuDistro
     
     # Set WSL availability based on validation result
@@ -945,7 +989,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     }
                 }
                 
-                $wslDistros = wsl -l -v 2>$null
+            $wslDistros = wsl -l -v 2>$null
 
             $ubuntuDistroFound = $false
             if ($wslDistros) {
@@ -961,70 +1005,78 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                 }
             }
 
-            if (-not $ubuntuDistroFound) {
-                if ($needsLinux) {
-                    Write-Info "$ubuntuDistro not found. Installing $ubuntuDistro..."
+            if ($ubuntuDistroFound) {
+                # Ensure Ubuntu is properly initialized
+                Write-Info "Verifying Ubuntu distribution is ready for use..."
+                $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
+                
+                if ($initSuccess) {
+                    Write-Success "$ubuntuDistro is ready for use!"
+                    $wslAvailable = $true
                     
-                    # Enhanced Ubuntu installation with multiple methods
+                    # Set as default distribution
+                    try {
+                        wsl -s $ubuntuDistro 2>$null
+                        Write-Success "$ubuntuDistro set as default WSL distribution"
+                    } catch {
+                        Write-Warning "Could not set $ubuntuDistro as default distribution, but continuing..."
+                    }
+                } else {
+                    Write-Warning "$ubuntuDistro found but not properly initialized"
+                    Write-Info "You may need to manually launch Ubuntu to complete setup"
+                    $wslAvailable = $true  # Still mark as available
+                }
+            } elseif (-not $ubuntuDistroFound) {
+                if ($needsLinux) {
+                    Write-Info "Ubuntu 24.04 not found. Installing Ubuntu 24.04..."
+                    
+                    # Enhanced Ubuntu 24.04 installation with multiple methods
                     $distroInstallSuccess = $false
                     
                     # Method 1: Standard WSL distribution install
-                    Write-Info "Attempting standard WSL distribution installation..."
+                    Write-Info "Attempting standard WSL Ubuntu 24.04 installation..."
                     try {
-                        wsl --install --distribution $ubuntuDistro --no-launch
-                        Write-Success "$ubuntuDistro installation initiated via WSL"
+                        wsl --install --distribution Ubuntu-24.04 --no-launch
+                        Write-Success "Ubuntu 24.04 installation initiated via WSL"
                         $distroInstallSuccess = $true
                     } catch {
-                        Write-Warning "Standard WSL distribution installation failed: $($_.Exception.Message)"
+                        Write-Warning "Standard WSL Ubuntu 24.04 installation failed: $($_.Exception.Message)"
                     }
                     
                     # Method 2: Microsoft Store via winget
                     if (-not $distroInstallSuccess -and (Test-Command "winget")) {
-                        Write-Info "Attempting Microsoft Store installation via winget..."
+                        Write-Info "Attempting Microsoft Store Ubuntu 24.04 installation via winget..."
                         try {
                             winget install --id=Canonical.Ubuntu.2404 --source=msstore --accept-package-agreements --accept-source-agreements --silent
-                            Write-Success "$ubuntuDistro installed via Microsoft Store (winget)"
+                            Write-Success "Ubuntu 24.04 installed via Microsoft Store (winget)"
                             $distroInstallSuccess = $true
                         } catch {
-                            Write-Warning "Microsoft Store installation via winget failed: $($_.Exception.Message)"
+                            Write-Warning "Microsoft Store Ubuntu 24.04 installation via winget failed: $($_.Exception.Message)"
                         }
                     }
                     
-                    # Method 3: Direct download and install Ubuntu appx
+                    # Method 3: Direct download and install Ubuntu 24.04 appx
                     if (-not $distroInstallSuccess) {
-                        Write-Info "Attempting direct Ubuntu appx installation..."
+                        Write-Info "Attempting direct Ubuntu 24.04 appx installation..."
                         try {
                             $ubuntuUrl = "https://aka.ms/wslubuntu2404"
                             $ubuntuPath = "$env:TEMP\Ubuntu2404.appx"
                             Write-Info "Downloading Ubuntu 24.04 package..."
                             Invoke-WebRequest -Uri $ubuntuUrl -OutFile $ubuntuPath -UseBasicParsing
                             
-                            Write-Info "Installing Ubuntu package..."
+                            Write-Info "Installing Ubuntu 24.04 package..."
                             Add-AppxPackage -Path $ubuntuPath
                             Remove-Item $ubuntuPath -Force -ErrorAction SilentlyContinue
                             Write-Success "$ubuntuDistro installed via direct download"
                             $distroInstallSuccess = $true
                         } catch {
-                            Write-Warning "Direct Ubuntu installation failed: $($_.Exception.Message)"
-                        }
-                    }
-                    
-                    # Method 4: Fallback to Ubuntu 20.04 if 24.04 fails
-                    if (-not $distroInstallSuccess) {
-                        Write-Info "Attempting fallback to Ubuntu 20.04..."
-                        try {
-                            wsl --install --distribution Ubuntu-20.04 --no-launch
-                            Write-Success "Ubuntu 20.04 installed as fallback"
-                            $ubuntuDistro = "Ubuntu-20.04"  # Update the distribution name
-                            $distroInstallSuccess = $true
-                        } catch {
-                            Write-Warning "Ubuntu 20.04 fallback installation failed: $($_.Exception.Message)"
+                            Write-Warning "Direct Ubuntu 24.04 installation failed: $($_.Exception.Message)"
                         }
                     }
                     
                     if ($distroInstallSuccess) {
-                        Write-Success "$ubuntuDistro installation completed."
-                        Write-Info "Initializing Ubuntu distribution for first use..."
+                        Write-Success "Ubuntu 24.04 installation completed."
+                        Write-Info "Initializing Ubuntu 24.04 distribution for first use..."
                         
                         # Initialize Ubuntu without blocking the script
                         $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
@@ -1032,27 +1084,11 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         if ($initSuccess) {
                             Write-Success "$ubuntuDistro is ready for use!"
                             $wslAvailable = $true
-                        } else {
-                            Write-Warning "$ubuntuDistro installation completed but initialization had issues."
-                        } else {
-                            Write-Warning "$ubuntuDistro installation completed but initialization had issues."
-                            Write-Info "You may need to manually launch Ubuntu from the Start menu to complete setup."
-                        }
-                        Write-Info "1. Open Microsoft Store"
-                        Write-Info "2. Search for 'Ubuntu 24.04' or 'Ubuntu'"
-                        Write-Info "3. Install any Ubuntu distribution"
-                        Write-Info "4. Launch Ubuntu from Start menu to complete setup"
-                        Write-Info "5. Run this script again"
-                        Write-Warning "Continuing without Linux environment for now..."
-                        $needsLinux = $false
-                        $wslAvailable = $false
-                    }
-                } else {
-                    Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
-                    $wslAvailable = $false
-                } else {
-                    Write-Info "$ubuntuDistro not found - will use Windows-only development mode"
-                }
+                        
+                        if ($initSuccess) {
+                            Write-Success "Ubuntu 24.04 is ready for use!"
+                            $wslAvailable = $true
+            }
                 # Ensure Ubuntu is properly initialized
                 Write-Info "Verifying Ubuntu distribution is ready for use..."
                 $initSuccess = Initialize-UbuntuDistribution -DistributionName $ubuntuDistro
@@ -1279,8 +1315,9 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
             }
         }
     }
-    
-    if ($needsLinux) {
+}
+
+if ($needsLinux) {
         if (-not $wslAvailable) {
             Write-Error "Selected loop '$($selectedLoop.Name)' requires WSL/Linux environment, but WSL is not available."
             Write-Info "Please install WSL or choose a Windows-compatible loop."
