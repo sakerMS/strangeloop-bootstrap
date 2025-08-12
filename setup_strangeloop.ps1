@@ -127,6 +127,11 @@ function Write-WSLCommand {
 
 # Helper function to check background Git LFS installation status
 function Test-BackgroundGitLfsInstallation {
+    # Check if background installation was started (with proper variable existence check)
+    if (-not (Get-Variable -Name "GitLfsInstallStarted" -Scope Global -ErrorAction SilentlyContinue)) {
+        $global:GitLfsInstallStarted = $false
+    }
+    
     if ($global:GitLfsInstallStarted) {
         Write-Info "Checking background Git LFS installation status..."
         
@@ -172,6 +177,12 @@ function Test-BackgroundGitLfsInstallation {
             return $false
         }
     }
+    
+    # If no background installation was started, just check if Git LFS is available
+    if (Test-Command "git-lfs") {
+        return $true
+    }
+    
     return $false
 }
 
