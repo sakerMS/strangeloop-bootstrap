@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.0 - Enhanced Enterprise         ║
+║                    Version 7.1 - Enhanced Enterprise          ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -1904,11 +1904,20 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     $gitEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
                     $gitBranch = Get-WSLCommandOutput "git config --global init.defaultBranch" $ubuntuDistro
 
+                                        $gitUserEmail = $global:GitUserEmail
+                    $gitUserName = $global:GitUserName
                     Write-Info "  Name: $gitName"
                     Write-Info "  Email: $gitEmail"
-                    Write-Info "  Default branch: $gitBranch"
-                    Write-Info "  Merge tool: VS Code"
-                    Write-Info "  Credential helper: Windows Git Credential Manager"
+
+                    Write-Info "  Name: $gitUserName"
+                    Write-Info "  Email: $gitUserEmail"
+
+                    Write-Info "  Name: $global:GitUserName"
+                    Write-Info "  Email: $global:GitUserEmail"
+                    
+                    Write-Info "  Default branch: $global:GitDefaultBranch"
+                    Write-Info "  Merge tool: $global:GitMergeTool"
+                    Write-Info "  Credential helper: $global:GitCredentialHelper"
 
                     if ($gitName -and $gitEmail) {
                         Write-Success "Git configured successfully:"
