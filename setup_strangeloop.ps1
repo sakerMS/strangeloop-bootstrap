@@ -2,11 +2,20 @@
 # Complete standalone setup for StrangeLoop CLI development environment
 # 
 # Author: [StrangeLoop Team]
-# Version: 6.1 - Single Script Architecture
+# Version: 7.0 - Enhanced Enterprise Edition
 # Created: August 2025
+# Last Updated: August 13, 2025
 # 
 # This standalone script provides complete StrangeLoop CLI setup with automatic
 # prerequisite checks and package updates for maximum simplicity.
+#
+# Features:
+# - Centralized Git credential capture
+# - Background Git LFS installation with auto-elevation
+# - Azure CLI authentication integration
+# - Group Policy compliance for corporate environments
+# - WSL/Ubuntu 24.04 automatic setup
+# - Comprehensive error handling and fallbacks
 #
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: Automatically handled
