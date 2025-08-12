@@ -896,14 +896,13 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
     # Set WSL availability based on validation result
     if ($wslFullyFunctional) {
         Write-Success "WSL and $ubuntuDistro are fully functional"
-    }
-    
-    if (-not $wslFullyFunctional) {
+        $wslAvailable = $true
+    } else {
         # Check if basic WSL is at least installed
         if (-not (Test-Command "wsl")) {
             if ($needsLinux) {
-                    Write-Info "WSL is required but not installed. Installing WSL..."
-                    Write-Warning "This requires administrator privileges and may require a restart."
+                Write-Info "WSL is required but not installed. Installing WSL..."
+                Write-Warning "This requires administrator privileges and may require a restart."
                 
                 # Force WSL installation with multiple methods
                 $installSuccess = $false
@@ -968,9 +967,9 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     exit 1
                 }
             } else {
-            } else {
                 Write-Info "WSL not installed - will use Windows-only development mode"
             }
+        } else {
             # WSL command exists but distribution check failed - try to fix or install distribution
             if ($needsLinux) {
                 Write-Info "WSL is installed but $ubuntuDistro distribution is not functional. Attempting to fix..."
@@ -1110,16 +1109,14 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     $wslAvailable = $true  # Still mark as available
                 }
             }
-            } else {
-                $wslAvailable = $false
-            }
         } else {
-            # WSL is fully functional according to our validation
-            Write-Success "WSL and $ubuntuDistro are fully functional"
-            $wslAvailable = $true
+            $wslAvailable = $false
+            }
+            }
         }
-        
-        # Enhanced WSL development environment setup
+    }
+    
+    # Enhanced WSL development environment setup
         if ($wslAvailable -and $ubuntuDistro) {
             Write-Step "WSL Development Environment Setup"
             
