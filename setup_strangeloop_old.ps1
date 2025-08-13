@@ -327,7 +327,7 @@ if (-not $SkipPrerequisites) {
         
         # Install Azure CLI if missing
         if ($missingPrereqs -contains "Azure CLI") {
-            Write-Info "Installing Azure CLI..."
+            Write-Info "Installing Azure CLI...."
             try {
                 Invoke-CommandWithDuration -Description "Installing Azure CLI" -ScriptBlock {
                     # Download and install Azure CLI
