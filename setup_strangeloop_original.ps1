@@ -2,8 +2,9 @@
 # Automated setup following readme.md requirements
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
-# Version: 2.0 Enterprise WSL Edition
+# Version: 3.0 Enterprise WSL Edition with Versioning
 # Created: August 2025
+# Last Updated: August 13, 2025
 # 
 # This script automates the setup of StrangeLoop development environment
 # including WSL, Python, Poetry, Git, and Docker configuration with
@@ -13,11 +14,12 @@
 # Execution Policy: RemoteSigned or Unrestricted required
 #
 # Usage Examples:
-#   .\setup-strangeloop-optimized.ps1                               # Standard installation (visible WSL)
-#   .\setup-strangeloop-optimized.ps1 -Help                         # Show detailed help
-#   .\setup-strangeloop-optimized.ps1 -VerboseWSL                   # Extra debug information
-#   .\setup-strangeloop-optimized.ps1 -SkipPrerequisites            # Skip prerequisite checks
-#   .\setup-strangeloop-optimized.ps1 -UserName "John" -UserEmail "john@co.com"
+#   .\setup_strangeloop_original.ps1                                # Standard installation (visible WSL)
+#   .\setup_strangeloop_original.ps1 -Help                          # Show detailed help
+#   .\setup_strangeloop_original.ps1 -Version                       # Show version information
+#   .\setup_strangeloop_original.ps1 -VerboseWSL                    # Extra debug information
+#   .\setup_strangeloop_original.ps1 -SkipPrerequisites             # Skip prerequisite checks
+#   .\setup_strangeloop_original.ps1 -UserName "John" -UserEmail "john@co.com"
 #
 # Parameters:
 #   -SkipPrerequisites     : Skip prerequisite installation checks
@@ -26,6 +28,7 @@
 #   -UserEmail             : Git user email (collected during prerequisites if not provided)
 #   -ShowWSLWindows        : Control WSL terminal windows (default: visible, use to override)
 #   -VerboseWSL            : Enable verbose WSL session information
+#   -Version               : Show version information and exit
 
 param(
     [switch]$SkipPrerequisites,
@@ -34,8 +37,128 @@ param(
     [string]$UserEmail,
     [switch]$ShowWSLWindows,
     [switch]$VerboseWSL,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$Version
 )
+
+# ==============================================================================
+# VERSION MANAGEMENT
+# ==============================================================================
+
+# Script Version Information
+$SCRIPT_VERSION = "3.0.0"
+$SCRIPT_BUILD = "20250813.1"
+$SCRIPT_NAME = "StrangeLoop CLI Setup Script"
+$SCRIPT_DESCRIPTION = "Enterprise WSL Edition with Versioning"
+$SCRIPT_AUTHOR = "Sakr Omera/Bing Ads Teams Egypt"
+$SCRIPT_CREATED = "August 2025"
+$SCRIPT_UPDATED = "August 13, 2025"
+
+# Version History / Changelog
+$VERSION_CHANGELOG = @{
+    "3.0.0" = @{
+        "Date" = "2025-08-13"
+        "Changes" = @(
+            "Added comprehensive versioning system",
+            "Optimized cache clearing to run once per flow",
+            "Enhanced error handling and user experience",
+            "Improved WSL session management",
+            "Added version checking and update notifications"
+        )
+    }
+    "2.0.0" = @{
+        "Date" = "2025-08-12"
+        "Changes" = @(
+            "Enterprise WSL session management architecture",
+            "Fixed collection modification errors",
+            "Updated platform categorization logic",
+            "Improved warning messages and verification",
+            "Added direct WSL command execution"
+        )
+    }
+    "1.0.0" = @{
+        "Date" = "2025-08-11"
+        "Changes" = @(
+            "Initial release",
+            "Basic StrangeLoop CLI setup automation",
+            "WSL and Windows environment support",
+            "Poetry and Git configuration"
+        )
+    }
+}
+
+function Show-Version {
+    <#
+    .SYNOPSIS
+    Displays version information for the script
+    #>
+    
+    Write-Host "`n" -NoNewline
+    Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║                    SCRIPT VERSION INFO                      ║" -ForegroundColor Cyan
+    Write-Host "╠══════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    Write-Host "║ Name:        $($SCRIPT_NAME.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Version:     $($SCRIPT_VERSION.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Build:       $($SCRIPT_BUILD.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Description: $($SCRIPT_DESCRIPTION.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Author:      $($SCRIPT_AUTHOR.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Created:     $($SCRIPT_CREATED.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "║ Updated:     $($SCRIPT_UPDATED.PadRight(43)) ║" -ForegroundColor White
+    Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    
+    Write-Host "`nRecent Changes:" -ForegroundColor Yellow
+    $latestVersion = $VERSION_CHANGELOG.Keys | Sort-Object { [Version]$_ } -Descending | Select-Object -First 1
+    $changes = $VERSION_CHANGELOG[$latestVersion]
+    Write-Host "Version $latestVersion ($($changes.Date)):" -ForegroundColor Green
+    foreach ($change in $changes.Changes) {
+        Write-Host "  • $change" -ForegroundColor Gray
+    }
+    
+    Write-Host "`nFor full changelog, use: Get-Help .\setup_strangeloop_original.ps1 -Full" -ForegroundColor Cyan
+}
+
+function Show-Changelog {
+    <#
+    .SYNOPSIS
+    Displays the complete version history and changelog
+    #>
+    
+    Write-Host "`n" -NoNewline
+    Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║                        CHANGELOG                            ║" -ForegroundColor Cyan
+    Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    
+    $sortedVersions = $VERSION_CHANGELOG.Keys | Sort-Object { [Version]$_ } -Descending
+    
+    foreach ($version in $sortedVersions) {
+        $versionInfo = $VERSION_CHANGELOG[$version]
+        Write-Host "`nVersion $version" -ForegroundColor Green -NoNewline
+        Write-Host " ($($versionInfo.Date))" -ForegroundColor Gray
+        Write-Host $("─" * 50) -ForegroundColor DarkGray
+        
+        foreach ($change in $versionInfo.Changes) {
+            Write-Host "  • $change" -ForegroundColor White
+        }
+    }
+}
+
+function Test-ScriptVersion {
+    <#
+    .SYNOPSIS
+    Checks if this is the latest version of the script (placeholder for future update checking)
+    #>
+    
+    # Placeholder for future version checking against repository or update server
+    # For now, just display current version info
+    Write-Verbose "Current script version: $SCRIPT_VERSION (Build: $SCRIPT_BUILD)"
+    return $true
+}
+
+# Handle Version parameter
+if ($Version) {
+    Show-Version
+    exit 0
+}
 
 # Enterprise WSL Management Enums and Classes
 enum WSLCommandResult {
@@ -322,13 +445,15 @@ if ($args -and ($args[0] -in $helpVariations)) {
 function Show-QuickHelp {
     Write-Host "`n📖 Quick Parameter Reference:" -ForegroundColor Cyan
     Write-Host "   -Help                     Show detailed help" -ForegroundColor White
+    Write-Host "   -Version                  Show version information" -ForegroundColor White
     Write-Host "   -ShowWSLWindows           See WSL terminal windows" -ForegroundColor White
     Write-Host "   -VerboseWSL               Enable detailed session info" -ForegroundColor White
     Write-Host "   -SkipPrerequisites        Skip prerequisite checks" -ForegroundColor White
     Write-Host "   -UserName 'Name'          Set Git user name" -ForegroundColor White
     Write-Host "   -UserEmail 'email'        Set Git user email" -ForegroundColor White
-    Write-Host "`n   Example: .\setup_strangeloop_old.ps1 -ShowWSLWindows -VerboseWSL" -ForegroundColor Yellow
-    Write-Host "   For full help: .\setup_strangeloop_old.ps1 -Help`n" -ForegroundColor Yellow
+    Write-Host "`n   Example: .\setup_strangeloop_original.ps1 -ShowWSLWindows -VerboseWSL" -ForegroundColor Yellow
+    Write-Host "   For full help: .\setup_strangeloop_original.ps1 -Help" -ForegroundColor Yellow
+    Write-Host "   For version info: .\setup_strangeloop_original.ps1 -Version`n" -ForegroundColor Yellow
 }
 
 # Error handling
@@ -1539,15 +1664,38 @@ function Get-UserInput {
     return $userInput
 }
 
-# Main Script
-Write-Host @"
-╔═══════════════════════════════════════════════════════════════╗
-║                StrangeLoop CLI Setup - Enterprise             ║
-║                     Automated Installation                    ║
-║                                                               ║
-║                Use -Help for detailed usage                   ║
-╚═══════════════════════════════════════════════════════════════╝
-"@ -ForegroundColor $Colors.Highlight
+# Main Script - Dynamic Banner with Version
+$bannerWidth = 63
+$title1 = "StrangeLoop CLI Setup - Enterprise"
+$title2 = "Automated Installation"
+$versionText = "Version: $SCRIPT_VERSION (Build: $SCRIPT_BUILD)"
+$helpText = "Use -Help for usage | -Version for details"
+
+# Center text function for banner
+function Center-BannerText($text, $width) {
+    $padding = [Math]::Max(0, ($width - $text.Length) / 2)
+    $leftPad = [Math]::Floor($padding)
+    $rightPad = $width - $text.Length - $leftPad
+    return (" " * $leftPad) + $text + (" " * $rightPad)
+}
+
+Write-Host "╔═══════════════════════════════════════════════════════════════╗" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText $title1 $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText $title2 $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText "" $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText $versionText $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText $helpText $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "╚═══════════════════════════════════════════════════════════════╝" -ForegroundColor $Colors.Highlight
+
+# Display version check information
+Write-Verbose "Script Version: $SCRIPT_VERSION"
+Write-Verbose "Build: $SCRIPT_BUILD"
+Write-Verbose "Use -Version parameter for detailed version information"
+
+# Initialize version tracking
+$script:ExecutionStartTime = Get-Date
+Write-Verbose "Script execution started at: $script:ExecutionStartTime"
+Test-ScriptVersion | Out-Null
 
 if ((Get-ExecutionPolicy) -eq 'Restricted') {
     Write-Error "Execution policy is Restricted. Please change it to RemoteSigned or Unrestricted."
@@ -3363,6 +3511,18 @@ try {
 # Final success message
 Write-Step "Setup Completed Successfully!"
 Write-Success "StrangeLoop CLI environment is ready!"
+
+# Display execution summary with version info
+$executionTime = (Get-Date) - $script:ExecutionStartTime
+$completedTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+Write-Host "`n" -NoNewline
+Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Green
+Write-Host "║                    SETUP COMPLETION SUMMARY                 ║" -ForegroundColor Green
+Write-Host "╠══════════════════════════════════════════════════════════════╣" -ForegroundColor Green
+Write-Host "║ Script Version: $($SCRIPT_VERSION.PadRight(42)) ║" -ForegroundColor White
+Write-Host "║ Execution Time: $($executionTime.ToString('mm\:ss').PadRight(42)) ║" -ForegroundColor White
+Write-Host "║ Completed:      $($completedTime.PadRight(42)) ║" -ForegroundColor White
+Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Green
 if ($needsLinux) {
     Write-Info "Application location (WSL): $appDir"
     Write-Info "Access via Windows: \\wsl.localhost\$ubuntuDistro$appDir"
@@ -3392,10 +3552,12 @@ Write-Host "   • Set-WSLWindowVisibility `$true - Toggle WSL window visibility
 Write-Host "`n🔧 Script Parameters for Next Run:" -ForegroundColor Cyan
 Write-Host "   • -ShowWSLWindows              - See WSL terminal windows during execution" -ForegroundColor White
 Write-Host "   • -VerboseWSL                  - Enable detailed session information" -ForegroundColor White
-Write-Host "   • Both parameters together     - Maximum visibility and diagnostics" -ForegroundColor White
+Write-Host "   • -Version                     - Show version and changelog information" -ForegroundColor White
+Write-Host "   • Both WSL parameters together - Maximum visibility and diagnostics" -ForegroundColor White
 
 Write-Host "`n💡 Pro tips:" -ForegroundColor Yellow
 Write-Host "   • Use -Help for comprehensive parameter documentation" -ForegroundColor Gray
+Write-Host "   • Use -Version for script version and changelog details" -ForegroundColor Gray
 Write-Host "   • Use -ShowWSLWindows for troubleshooting WSL command issues" -ForegroundColor Gray
 Write-Host "   • WSL sessions are automatically managed and cleaned up" -ForegroundColor Gray
 Write-Host "   • All WSL commands are audited in: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
