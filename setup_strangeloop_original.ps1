@@ -3339,6 +3339,33 @@ try {
                             Write-Host "  ✓ Complete! Configuration applied successfully" -ForegroundColor Green
                             Write-Success "Configuration applied successfully with strangeloop recurse"
                             
+                            # Install WSL extension in VS Code before opening
+                            Write-Info "Ensuring WSL extension is installed in VS Code..."
+                            Write-Host "  The WSL extension enables seamless development in WSL from VS Code" -ForegroundColor Gray
+                            Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Installing WSL extension for VS Code..." -ForegroundColor Yellow
+                            
+                            try {
+                                # Check if VS Code is installed and accessible
+                                $codeVersionCheck = code --version 2>$null
+                                if ($LASTEXITCODE -eq 0) {
+                                    # Install WSL extension
+                                    $wslExtensionInstall = code --install-extension ms-vscode-remote.remote-wsl --force 2>&1
+                                    if ($LASTEXITCODE -eq 0) {
+                                        Write-Host "  ✓ WSL extension installed/updated successfully" -ForegroundColor Green
+                                        Write-Success "VS Code WSL extension is ready"
+                                    } else {
+                                        Write-Host "  ⚠ WSL extension installation had issues but continuing" -ForegroundColor Yellow
+                                        Write-Warning "WSL extension may not be properly installed: $wslExtensionInstall"
+                                    }
+                                } else {
+                                    Write-Host "  ⚠ VS Code command not accessible, skipping extension install" -ForegroundColor Yellow
+                                    Write-Warning "VS Code 'code' command not found. Extension will need to be installed manually."
+                                }
+                            } catch {
+                                Write-Host "  ⚠ Extension installation had issues: $($_.Exception.Message)" -ForegroundColor Yellow
+                                Write-Warning "WSL extension installation failed, but continuing with VS Code launch"
+                            }
+                            
                             # Open project in VS Code (WSL context)
                             Write-Info "Opening project in VS Code..."
                             
