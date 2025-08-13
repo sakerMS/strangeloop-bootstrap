@@ -1,6 +1,6 @@
-# StrangeLoop CLI Bootstrap - User Guide
+# StrangeLoop CLI Bootstrap - User Guide (v3.0 Enterprise WSL Edition)
 
-Zero-configuration automated setup for StrangeLoop CLI development environment.
+Enterprise-grade automated setup for StrangeLoop CLI development environment with enhanced error handling, robust Azure DevOps integration, and advanced WSL session management.
 
 ## 🚀 **Quick Install**
 
@@ -10,38 +10,78 @@ Copy and paste this command into PowerShell:
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/setup_strangeloop.ps1" -OutFile "setup_strangeloop.ps1"; .\setup_strangeloop.ps1
 ```
 
-> **Note**: This uses the sakerMS GitHub repository.
+> **Note**: This uses the sakerMS GitHub repository with v3.0 Enterprise WSL Edition.
 
-## � **Quick Reset (Clean Up)**
+## 🔄 **Quick Reset (Enhanced Safety)**
 
-If you need to clean up setup changes or troubleshoot:
+If you need to clean up setup changes or troubleshoot issues:
 
 ```powershell
 # Download and run reset script (SAFE - preserves your projects)
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sakerMS/strangeloop-bootstrap/main/reset_strangeloop.ps1" -OutFile "reset_strangeloop.ps1"; .\reset_strangeloop.ps1
 ```
 
-**✅ The reset script is SAFE:**
-- Only removes setup-related changes (execution policy)
-- **Preserves all your StrangeLoop projects and work**
-- Does not uninstall StrangeLoop CLI or affect user data
+**✅ Enhanced Reset Script Safety Features:**
+- **Default "No" Confirmations**: All destructive operations default to safe "No" option with clear `[y/N - default: N]` indicators
+- **Project Preservation**: **Preserves all your StrangeLoop projects and work**
+- **Granular Control**: Choose what to reset (WSL, Azure CLI, StrangeLoop CLI)
+- **What-If Mode**: Preview changes before execution with `-WhatIf` parameter
+- **Force Mode**: Skip confirmations for automation with `-Force` parameter
 
-## �📋 **What This Does**
+## 📋 **What This Does (v3.0 Enhancements)**
 
-The bootstrap script will:
+The enterprise bootstrap script will:
 
-- ✅ **Check Prerequisites**: PowerShell, Git, curl
-- ✅ **Install StrangeLoop**: CLI and dependencies (always latest version)
-- ✅ **Analyze Environment**: WSL availability for Linux environments
-- ✅ **Discover Templates**: Show available project templates
-- ✅ **Smart Setup**: Platform-specific configuration based on your choice
+- ✅ **Enhanced Prerequisites**: PowerShell, Git, curl with improved validation
+- ✅ **Robust StrangeLoop Installation**: Enhanced Azure DevOps download with retry logic and corruption detection
+- ✅ **Enterprise WSL Management**: Advanced session management, health monitoring, and performance reporting
+- ✅ **Smart Environment Analysis**: WSL availability with enhanced detection and error recovery
+- ✅ **Template Discovery**: Show available project templates with better error handling
+- ✅ **Reliable Configuration**: Platform-specific setup with comprehensive error recovery
 
-## ⚙️ **Usage (Ultra-Simple)**
+### **New v3.0 Features:**
+- 🔥 **Enhanced Download Reliability**: Multiple retry methods for StrangeLoop installation with authentication verification
+- 🛡️ **Package Corruption Detection**: Validates download integrity to prevent 0-byte installations
+- 🚀 **Simplified WSL Architecture**: Eliminated DEBIAN_FRONTEND complexity that caused command hangs
+- 📊 **Enterprise WSL Session Management**: Advanced session tracking and health monitoring
+- ⚡ **Performance Monitoring**: Real-time WSL session performance and resource usage tracking
+
+## ⚙️ **Usage (Enterprise Features)**
 
 ### **Standard Setup (Recommended)**
 ```powershell
-# Complete setup - no parameters needed
+# Complete setup with enterprise WSL features - no parameters needed
 .\setup_strangeloop.ps1
+```
+
+### **Advanced Usage with v3.0 Features**
+```powershell
+# Show version and changelog information
+.\setup_strangeloop.ps1 -Version
+
+# Enable verbose WSL debugging and session monitoring
+.\setup_strangeloop.ps1 -VerboseWSL
+
+# Skip prerequisite checks (for advanced users)
+.\setup_strangeloop.ps1 -SkipPrerequisites
+
+# Pre-configure Git user information
+.\setup_strangeloop.ps1 -UserName "Your Name" -UserEmail "your.email@company.com"
+
+# Show detailed help with all parameters
+.\setup_strangeloop.ps1 -Help
+```
+
+### **Reset Script Advanced Usage**
+```powershell
+# Standard reset with enhanced safety confirmations
+.\reset_strangeloop.ps1
+
+# Preview what would be reset without making changes
+.\reset_strangeloop.ps1 -WhatIf
+
+# Force reset without confirmations (for automation)
+.\reset_strangeloop.ps1 -Force
 ```
 
 ## 🎯 **Design Philosophy**
@@ -98,6 +138,101 @@ git clone https://github.com/sakerMS/strangeloop-bootstrap.git
 cd strangeloop-bootstrap
 .\setup_strangeloop.ps1
 ```
+
+## 🔧 **Troubleshooting Guide (v3.0 Enhanced)**
+
+### **StrangeLoop Installation Issues**
+
+#### **Problem**: Download Timeout or Failed Installation
+**Symptoms**: 
+- "Download timeout or failed" error messages
+- 0-byte StrangeLoop installer files
+- Authentication errors with Azure DevOps
+
+**Solutions**:
+1. **Check Azure CLI Authentication**:
+   ```powershell
+   az account show
+   # If not logged in, run: az login
+   ```
+
+2. **Verify Package Integrity**:
+   The script now automatically detects corrupted downloads and retries with enhanced methods
+
+3. **Manual Package Download**:
+   If automated download fails, manually download from Azure DevOps and place in the expected location
+
+4. **Reset and Retry**:
+   ```powershell
+   .\reset_strangeloop.ps1
+   .\setup_strangeloop.ps1
+   ```
+
+#### **Problem**: Commands Hanging or WSL Session Issues
+**Note**: v3.0 has eliminated DEBIAN_FRONTEND complexity that previously caused command hangs.
+
+**Solutions**:
+1. **Use Enhanced WSL Session Management**:
+   ```powershell
+   # Check WSL session health
+   Test-WSLSessionHealth
+   
+   # View performance report
+   Show-WSLPerformanceReport
+   
+   # Clean up unhealthy sessions
+   Optimize-WSLSessions
+   ```
+
+2. **Enable Verbose Mode for Debugging**:
+   ```powershell
+   .\setup_strangeloop.ps1 -VerboseWSL
+   ```
+
+#### **Problem**: Reset Script Safety Concerns
+**Note**: v3.0 reset script defaults to safe "No" confirmations.
+
+**Features**:
+- All destructive operations default to "No" with clear `[y/N - default: N]` indicators
+- Projects are never touched during reset
+- Use `-WhatIf` to preview changes before execution
+
+### **Environment Issues**
+
+#### **PowerShell Execution Policy**
+```powershell
+# Check current policy
+Get-ExecutionPolicy
+
+# The script will handle this automatically, but manual fix:
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+#### **WSL Not Available**
+The script will detect WSL availability and guide you through installation if needed.
+
+### **Enterprise WSL Features (New in v3.0)**
+
+#### **Session Management Commands**
+```powershell
+# View session performance and health
+Show-WSLPerformanceReport
+
+# Check session connectivity
+Test-WSLSessionHealth
+
+# Clean up unhealthy sessions
+Optimize-WSLSessions
+
+# Toggle WSL window visibility for debugging
+Set-WSLWindowVisibility $true
+```
+
+#### **Performance Monitoring**
+- Real-time session execution time tracking
+- Resource usage monitoring
+- Automatic cleanup of unhealthy sessions
+- Health status reporting
 
 ## 🎯 **Supported Templates**
 
