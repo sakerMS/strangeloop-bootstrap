@@ -322,11 +322,79 @@ if (-not $SkipPrerequisites) {
     }
     
     if ($missingPrereqs.Count -gt 0) {
-        Write-Error "Missing prerequisites: $($missingPrereqs -join ', ')"
-        Write-Info "Please install the missing prerequisites and run the script again."
-        Write-Info "Azure CLI: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli"
-        Write-Info "Git LFS: https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage"
-        exit 1
+        Write-Warning "Missing prerequisites detected: $($missingPrereqs -join ', ')"
+        Write-Info "Attempting to install missing prerequisites automatically..."
+        
+        # Install Azure CLI if missing
+        if ($missingPrereqs -contains "Azure CLI") {
+            Write-Info "Installing Azure CLI..."
+            try {
+                Invoke-CommandWithDuration -Description "Installing Azure CLI" -ScriptBlock {
+                    # Download and install Azure CLI
+                    Write-Info "Downloading Azure CLI installer..."
+                    $azCliUrl = "https://aka.ms/installazurecliwindows"
+                    $azCliInstaller = "$env:TEMP\AzureCLI.msi"
+                    
+                    Invoke-WebRequest -Uri $azCliUrl -OutFile $azCliInstaller -UseBasicParsing
+                    Write-Success "Azure CLI installer downloaded"
+                    
+                    # Install Azure CLI
+                    Write-Info "Installing Azure CLI (this may take a few minutes)..."
+                    Start-Process msiexec.exe -ArgumentList "/i", $azCliInstaller, "/quiet", "/norestart" -Wait -NoNewWindow
+                    
+                    # Cleanup
+                    Remove-Item $azCliInstaller -Force -ErrorAction SilentlyContinue
+                    
+                    # Refresh PATH to pick up Azure CLI
+                    $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+                    $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+                    $env:Path = $machinePath + ";" + $userPath
+                    
+                    # Verify installation
+                    if (Test-Command "az") {
+                        Write-Success "Azure CLI installed successfully"
+                        $azVersion = az version --output tsv --query '"azure-cli"' 2>$null
+                        if ($azVersion) {
+                            Write-Info "Installed version: $azVersion"
+                        }
+                    } else {
+                        throw "Azure CLI installation failed - 'az' command not found in PATH"
+                    }
+                }
+            } catch {
+                Write-Error "Azure CLI installation failed: $($_.Exception.Message)"
+                Write-Info "Please install Azure CLI manually:"
+                Write-Info "1. Download from: https://aka.ms/installazurecliwindows"
+                Write-Info "2. Run the installer"
+                Write-Info "3. Restart your terminal and run this script again"
+                exit 1
+            }
+        }
+        
+        # Check for remaining missing prerequisites after installation attempts
+        $stillMissing = @()
+        foreach ($prereq in $missingPrereqs) {
+            $command = switch ($prereq) {
+                "Azure CLI" { "az" }
+                "Git" { "git" }
+                "Git LFS" { "git-lfs" }
+            }
+            if (-not (Test-Command $command)) {
+                $stillMissing += $prereq
+            }
+        }
+        
+        if ($stillMissing.Count -gt 0) {
+            Write-Error "Still missing prerequisites after installation attempts: $($stillMissing -join ', ')"
+            Write-Info "Please install the remaining prerequisites manually and run the script again."
+            if ($stillMissing -contains "Git") {
+                Write-Info "Git: https://git-scm.com/download/windows"
+            }
+            if ($stillMissing -contains "Git LFS") {
+                Write-Info "Git LFS: https://docs.github.com/en/repositories/working-with-files/managing-large-files/installing-git-large-file-storage"
+            }
+            exit 1
+        }
     }
     
     # Configure Git mergetool if not set
