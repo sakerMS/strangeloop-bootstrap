@@ -171,6 +171,11 @@ function Invoke-WSLCommand {
                 $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
             }
             
+            # Debug output for Git commands
+            if ($Command -match "git config") {
+                Write-Host "  Debug: Executing WSL command: $wslCommand" -ForegroundColor DarkGray
+            }
+            
             $result = Invoke-Expression $wslCommand 2>&1
             
             # Stop progress animation
@@ -1232,8 +1237,25 @@ if (-not $SkipDevelopmentTools) {
                 $UserEmail = Get-UserInput "Enter your email address for Git commits" -Required $true
             }
             
-            Invoke-WSLCommand "git config --global user.name '$UserName'" "Setting Git user name" $ubuntuDistro
-            Invoke-WSLCommand "git config --global user.email '$UserEmail'" "Setting Git user email" $ubuntuDistro
+            # Use Git configuration without quotes to avoid escaping issues
+            Write-Info "Configuring Git user name: $UserName"
+            $gitNameResult = Invoke-WSLCommand "git config --global user.name `"$UserName`"" "Setting Git user name" $ubuntuDistro
+            Write-Info "Configuring Git user email: $UserEmail"
+            $gitEmailResult = Invoke-WSLCommand "git config --global user.email `"$UserEmail`"" "Setting Git user email" $ubuntuDistro
+            
+            # Verify the configuration was set
+            $verifyName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
+            $verifyEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
+            
+            if ($verifyName -eq $UserName -and $verifyEmail -eq $UserEmail) {
+                Write-Success "Git user configuration verified successfully"
+                Write-Host "  Name: $verifyName" -ForegroundColor Gray
+                Write-Host "  Email: $verifyEmail" -ForegroundColor Gray
+            } else {
+                Write-Warning "Git configuration may not have been set correctly:"
+                Write-Host "  Expected Name: $UserName, Got: $verifyName" -ForegroundColor Yellow
+                Write-Host "  Expected Email: $UserEmail, Got: $verifyEmail" -ForegroundColor Yellow
+            }
         }
         
         # Configure Git line endings for cross-platform compatibility in WSL
