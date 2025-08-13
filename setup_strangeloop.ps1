@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.4 - Enhanced Enterprise          ║
+║                    Version 7.5 - Enhanced Enterprise          ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -1893,7 +1893,6 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         
                         # Configure Git credential manager and merge tool
                         git config --global credential.helper "/mnt/c/Program\ Files/Git/mingw64/bin/git-credential-manager.exe"
-                        git config --global credential.helper "/mnt/c/Program Files/Git/mingw64/bin/git-credential-manager.exe"
                         git config --global credential.useHttpPath true
                         git config --global merge.tool vscode
                         git config --global mergetool.vscode.cmd 'code --wait `$MERGED'
