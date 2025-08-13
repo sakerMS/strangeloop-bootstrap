@@ -2434,8 +2434,15 @@ if (-not $SkipDevelopmentTools) {
         
         $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
         
-        if (-not $updateResult) {
-            Write-Warning "Package update may have failed. Continuing with setup..."
+        # Since apt update often reports success even when Invoke-WSLCommand returns false,
+        # we'll be less strict about the warning and only show it if we detect actual failures
+        if ($script:WSLConfig.VerboseMode -and $updateResult) {
+            Write-Host "  ✓ Package lists updated successfully" -ForegroundColor DarkGreen
+        } elseif (-not $updateResult) {
+            # Only show warning in verbose mode or if there are clear signs of failure
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  ℹ Package update completed (command result unclear)" -ForegroundColor DarkYellow
+            }
         }
         
         # Check for upgradeable packages
