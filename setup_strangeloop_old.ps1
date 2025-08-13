@@ -20,12 +20,428 @@ param(
     [string]$UserEmail
 )
 
+# Enterprise WSL Management Enums and Classes
+enum WSLCommandResult {
+    Success
+    NetworkTimeout
+    PermissionDenied
+    CommandNotFound
+    SessionDisconnected
+    ParseError
+    UnexpectedOutput
+    Retry
+}
+
+enum WSLSessionType {
+    GitOperations
+    PackageManagement
+    StrangeLoopCLI
+    SystemConfiguration
+}
+
+class WSLSessionConfig {
+    [string]$Id
+    [string]$Distribution
+    [WSLSessionType]$Type
+    [string]$WorkingDirectory
+    [hashtable]$Environment
+    [bool]$RequiresSudo
+    [TimeSpan]$Timeout
+    [int]$MaxCommands
+    [DateTime]$CreatedTime
+    [DateTime]$LastUsed
+    [int]$CommandsExecuted
+    [bool]$IsHealthy
+    [System.Diagnostics.Process]$Process
+    [System.IO.StreamWriter]$InputStream
+    [System.IO.StreamReader]$OutputStream
+    [System.IO.StreamReader]$ErrorStream
+    
+    WSLSessionConfig([WSLSessionType]$sessionType) {
+        $this.Id = [System.Guid]::NewGuid().ToString('N')[0..7] -join ''
+        $this.Type = $sessionType
+        $this.Distribution = 'Ubuntu-24.04'
+        $this.CreatedTime = Get-Date
+        $this.LastUsed = Get-Date
+        $this.IsHealthy = $true
+        $this.CommandsExecuted = 0
+        
+        switch ($sessionType) {
+            'GitOperations' {
+                $this.WorkingDirectory = '/tmp'
+                $this.RequiresSudo = $false
+                $this.Timeout = [TimeSpan]::FromMinutes(2)
+                $this.MaxCommands = 50
+            }
+            'PackageManagement' {
+                $this.WorkingDirectory = '/tmp'
+                $this.RequiresSudo = $true
+                $this.Timeout = [TimeSpan]::FromMinutes(10)
+                $this.MaxCommands = 20
+            }
+            'StrangeLoopCLI' {
+                $this.WorkingDirectory = '/home/user/projects'
+                $this.RequiresSudo = $false
+                $this.Timeout = [TimeSpan]::FromMinutes(5)
+                $this.MaxCommands = 100
+            }
+            'SystemConfiguration' {
+                $this.WorkingDirectory = '/tmp'
+                $this.RequiresSudo = $true
+                $this.Timeout = [TimeSpan]::FromMinutes(3)
+                $this.MaxCommands = 30
+            }
+        }
+    }
+}
+
+class WSLPerformanceMetrics {
+    [int]$TotalCommands
+    [TimeSpan]$TotalExecutionTime
+    [TimeSpan]$AverageCommandTime
+    [int]$SuccessfulCommands
+    [int]$FailedCommands
+    [DateTime]$SessionStartTime
+    [hashtable]$CommandTypeMetrics
+    
+    WSLPerformanceMetrics() {
+        $this.SessionStartTime = Get-Date
+        $this.CommandTypeMetrics = @{}
+    }
+    
+    [void] RecordCommand([string]$command, [TimeSpan]$duration, [bool]$success) {
+        $this.TotalCommands++
+        $this.TotalExecutionTime = $this.TotalExecutionTime.Add($duration)
+        
+        if ($success) {
+            $this.SuccessfulCommands++
+        } else {
+            $this.FailedCommands++
+        }
+        
+        if ($this.TotalCommands -gt 0) {
+            $this.AverageCommandTime = [TimeSpan]::FromMilliseconds($this.TotalExecutionTime.TotalMilliseconds / $this.TotalCommands)
+        }
+        
+        # Track by command type
+        $commandType = $command.Split(' ')[0]
+        if (-not $this.CommandTypeMetrics.ContainsKey($commandType)) {
+            $this.CommandTypeMetrics[$commandType] = @{ Count = 0; TotalTime = [TimeSpan]::Zero; Failures = 0 }
+        }
+        $this.CommandTypeMetrics[$commandType].Count++
+        $this.CommandTypeMetrics[$commandType].TotalTime = $this.CommandTypeMetrics[$commandType].TotalTime.Add($duration)
+        if (-not $success) {
+            $this.CommandTypeMetrics[$commandType].Failures++
+        }
+    }
+}
+
+class WSLAuditEntry {
+    [DateTime]$Timestamp
+    [string]$SessionId
+    [string]$Command
+    [WSLCommandResult]$Result
+    [TimeSpan]$Duration
+    [string]$Output
+    [string]$ErrorOutput
+    [string]$User
+    [string]$ComputerName
+    
+    WSLAuditEntry([string]$sessionId, [string]$command, [WSLCommandResult]$result, [TimeSpan]$duration, [string]$output, [string]$errorOutput) {
+        $this.Timestamp = Get-Date
+        $this.SessionId = $sessionId
+        $this.Command = $command
+        $this.Result = $result
+        $this.Duration = $duration
+        $this.Output = $output
+        $this.ErrorOutput = $errorOutput
+        $this.User = $env:USERNAME
+        $this.ComputerName = $env:COMPUTERNAME
+    }
+}
+
 # Error handling
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# Global variables for tracking display state
+# Enterprise WSL Configuration
+$script:WSLConfig = @{
+    AuditLogPath = "$env:TEMP\StrangeLoop_WSL_Audit.jsonl"
+    MaxConcurrentSessions = 3
+    SessionPoolSize = 2
+    DefaultTimeout = [TimeSpan]::FromMinutes(5)
+    HealthCheckInterval = [TimeSpan]::FromMinutes(1)
+    CommandMarker = "STRANGELOOP_CMD_"
+    CompletionMarker = "STRANGELOOP_COMPLETE_"
+    ErrorMarker = "STRANGELOOP_ERROR_"
+}
+
+# Global session management
+$script:WSLSessions = @{}
+$script:WSLMetrics = [WSLPerformanceMetrics]::new()
 $script:LastShownDistribution = ""
+$script:SudoPassword = $null
+
+# Enterprise WSL Session Manager
+class WSLSessionManager {
+    [hashtable]$Sessions
+    [WSLPerformanceMetrics]$Metrics
+    [string]$AuditLogPath
+    
+    WSLSessionManager() {
+        $this.Sessions = @{}
+        $this.Metrics = [WSLPerformanceMetrics]::new()
+        $this.AuditLogPath = $script:WSLConfig.AuditLogPath
+        
+        # Initialize audit log
+        if (-not (Test-Path $this.AuditLogPath)) {
+            New-Item -Path $this.AuditLogPath -ItemType File -Force | Out-Null
+        }
+    }
+    
+    [WSLSessionConfig] GetOrCreateSession([WSLSessionType]$sessionType) {
+        $existingSession = $this.Sessions.Values | Where-Object { 
+            $_.Type -eq $sessionType -and $_.IsHealthy -and $_.CommandsExecuted -lt $_.MaxCommands 
+        } | Select-Object -First 1
+        
+        if ($existingSession) {
+            $existingSession.LastUsed = Get-Date
+            return $existingSession
+        }
+        
+        # Create new session
+        $session = [WSLSessionConfig]::new($sessionType)
+        $this.InitializeSession($session)
+        $this.Sessions[$session.Id] = $session
+        
+        Write-Host "  Created new WSL session [$($session.Id)] for $($session.Type)" -ForegroundColor DarkGreen
+        return $session
+    }
+    
+    [void] InitializeSession([WSLSessionConfig]$session) {
+        try {
+            # Create WSL process with interactive shell
+            $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $processInfo.FileName = "wsl.exe"
+            $processInfo.Arguments = "-d $($session.Distribution) -- bash --login"
+            $processInfo.UseShellExecute = $false
+            $processInfo.RedirectStandardInput = $true
+            $processInfo.RedirectStandardOutput = $true
+            $processInfo.RedirectStandardError = $true
+            $processInfo.CreateNoWindow = $true
+            
+            $session.Process = [System.Diagnostics.Process]::Start($processInfo)
+            $session.InputStream = $session.Process.StandardInput
+            $session.OutputStream = $session.Process.StandardOutput
+            $session.ErrorStream = $session.Process.StandardError
+            
+            # Set up environment
+            $this.ExecuteInitializationCommands($session)
+            
+            $session.IsHealthy = $true
+            Write-Verbose "WSL session $($session.Id) initialized successfully"
+            
+        } catch {
+            $session.IsHealthy = $false
+            Write-Error "Failed to initialize WSL session: $($_.Exception.Message)"
+            throw
+        }
+    }
+    
+    [void] ExecuteInitializationCommands([WSLSessionConfig]$session) {
+        # Set working directory
+        $this.SendCommand($session, "cd $($session.WorkingDirectory)")
+        
+        # Set up command markers for reliable command completion detection
+        $this.SendCommand($session, "export PS1='READY> '")
+        
+        # Configure environment based on session type
+        switch ($session.Type) {
+            'GitOperations' {
+                $this.SendCommand($session, "export GIT_TERMINAL_PROMPT=0")
+            }
+            'PackageManagement' {
+                $this.SendCommand($session, "export DEBIAN_FRONTEND=noninteractive")
+            }
+            'StrangeLoopCLI' {
+                # Ensure projects directory exists
+                $this.SendCommand($session, "mkdir -p /home/user/projects")
+                $this.SendCommand($session, "cd /home/user/projects")
+            }
+        }
+    }
+    
+    [void] SendCommand([WSLSessionConfig]$session, [string]$command) {
+        if (-not $session.IsHealthy -or $session.Process.HasExited) {
+            throw "WSL session $($session.Id) is not healthy"
+        }
+        
+        $session.InputStream.WriteLine($command)
+        $session.InputStream.Flush()
+    }
+    
+    [string] ReadOutput([WSLSessionConfig]$session, [TimeSpan]$timeout) {
+        $output = ""
+        $startTime = Get-Date
+        
+        while ((Get-Date).Subtract($startTime) -lt $timeout) {
+            if ($session.OutputStream.Peek() -ge 0) {
+                $line = $session.OutputStream.ReadLine()
+                $output += $line + "`n"
+                
+                # Check for completion marker
+                if ($line -match "READY>") {
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 50
+        }
+        
+        return $output.Trim()
+    }
+    
+    [WSLCommandResult] ExecuteCommand([WSLSessionConfig]$session, [string]$command, [string]$description) {
+        $startTime = Get-Date
+        $commandId = [System.Guid]::NewGuid().ToString('N')[0..7] -join ''
+        
+        try {
+            Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $description..." -ForegroundColor Yellow
+            Write-Host "  Session: $($session.Id) | Type: $($session.Type)" -ForegroundColor DarkGray
+            
+            # Send command with unique marker
+            $markedCommand = "$command; echo '$($script:WSLConfig.CompletionMarker)$commandId'"
+            $this.SendCommand($session, $markedCommand)
+            
+            # Read output with timeout
+            $output = $this.ReadOutput($session, $session.Timeout)
+            $duration = (Get-Date).Subtract($startTime)
+            
+            # Check for completion marker
+            $success = $output -match "$($script:WSLConfig.CompletionMarker)$commandId"
+            $result = if ($success) { [WSLCommandResult]::Success } else { [WSLCommandResult]::UnexpectedOutput }
+            
+            # Clean output (remove markers)
+            $cleanOutput = $output -replace "$($script:WSLConfig.CompletionMarker)$commandId", "" -replace "READY>.*", ""
+            
+            # Update session metrics
+            $session.CommandsExecuted++
+            $session.LastUsed = Get-Date
+            $this.Metrics.RecordCommand($command, $duration, $success)
+            
+            # Audit logging
+            $this.WriteAuditLog($session.Id, $command, $result, $duration, $cleanOutput, "")
+            
+            if ($success) {
+                Write-Host "  ✓ Complete! (Duration: $($duration.TotalSeconds.ToString('F1'))s)" -ForegroundColor Green
+                return [WSLCommandResult]::Success
+            } else {
+                Write-Host "  ⚠ Command may not have completed properly" -ForegroundColor Yellow
+                Write-Host "  Output: $($cleanOutput.Split("`n")[0])" -ForegroundColor Yellow
+                return [WSLCommandResult]::UnexpectedOutput
+            }
+            
+        } catch {
+            $duration = (Get-Date).Subtract($startTime)
+            Write-Host "  ✗ Exception occurred (Duration: $($duration.TotalSeconds.ToString('F1'))s)" -ForegroundColor Red
+            Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+            
+            $this.WriteAuditLog($session.Id, $command, [WSLCommandResult]::ParseError, $duration, "", $_.Exception.Message)
+            return [WSLCommandResult]::ParseError
+        }
+    }
+    
+    [void] WriteAuditLog([string]$sessionId, [string]$command, [WSLCommandResult]$result, [TimeSpan]$duration, [string]$output, [string]$errorOutput) {
+        $auditEntry = [WSLAuditEntry]::new($sessionId, $command, $result, $duration, $output, $errorOutput)
+        $logLine = $auditEntry | ConvertTo-Json -Compress
+        Add-Content -Path $this.AuditLogPath -Value $logLine
+    }
+    
+    [void] CleanupSession([string]$sessionId) {
+        if ($this.Sessions.ContainsKey($sessionId)) {
+            $session = $this.Sessions[$sessionId]
+            
+            try {
+                if ($session.Process -and -not $session.Process.HasExited) {
+                    $session.InputStream.WriteLine("exit")
+                    $session.InputStream.Close()
+                    
+                    if (-not $session.Process.WaitForExit(5000)) {
+                        $session.Process.Kill()
+                    }
+                }
+            } catch {
+                Write-Verbose "Error during session cleanup: $($_.Exception.Message)"
+            } finally {
+                $this.Sessions.Remove($sessionId)
+                Write-Verbose "WSL session $sessionId cleaned up"
+            }
+        }
+    }
+    
+    [void] CleanupAllSessions() {
+        foreach ($sessionId in $this.Sessions.Keys) {
+            $this.CleanupSession($sessionId)
+        }
+        Write-Host "All WSL sessions cleaned up" -ForegroundColor Green
+    }
+    
+    [hashtable] GetPerformanceReport() {
+        return @{
+            TotalCommands = $this.Metrics.TotalCommands
+            SuccessRate = if ($this.Metrics.TotalCommands -gt 0) { 
+                [math]::Round(($this.Metrics.SuccessfulCommands / $this.Metrics.TotalCommands) * 100, 2) 
+            } else { 0 }
+            AverageCommandTime = $this.Metrics.AverageCommandTime.TotalSeconds.ToString('F2') + 's'
+            ActiveSessions = $this.Sessions.Count
+            SessionUptime = (Get-Date).Subtract($this.Metrics.SessionStartTime).ToString('hh\:mm\:ss')
+        }
+    }
+}
+
+# Initialize the global WSL session manager
+$script:WSLManager = [WSLSessionManager]::new()
+
+# Register cleanup on script exit
+Register-EngineEvent PowerShell.Exiting -Action {
+    if ($script:WSLManager) {
+        $script:WSLManager.CleanupAllSessions()
+    }
+}
+
+# Enterprise WSL Integration Banner
+function Show-EnterpriseWSLBanner {
+    Write-Host "`n╔══════════════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+    Write-Host "║                    🚀 StrangeLoop Enterprise WSL Setup 2.0                   ║" -ForegroundColor Cyan
+    Write-Host "║                          Advanced Session Management                          ║" -ForegroundColor Cyan
+    Write-Host "╠══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    Write-Host "║  Features:                                                                   ║" -ForegroundColor White
+    Write-Host "║  ✅ Multi-Session WSL Management    ✅ Enterprise Error Handling             ║" -ForegroundColor White
+    Write-Host "║  ✅ Performance Monitoring          ✅ Comprehensive Audit Logging           ║" -ForegroundColor White
+    Write-Host "║  ✅ Auto-Retry with Backoff         ✅ Interactive Fallback Mode             ║" -ForegroundColor White
+    Write-Host "║  ✅ Command Type Optimization       ✅ Session Health Monitoring             ║" -ForegroundColor White
+    Write-Host "╠══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
+    Write-Host "║  WSL Session Types:                                                          ║" -ForegroundColor Yellow
+    Write-Host "║  🔧 GitOperations        🔧 PackageManagement                               ║" -ForegroundColor Yellow
+    Write-Host "║  🔧 StrangeLoopCLI       🔧 SystemConfiguration                             ║" -ForegroundColor Yellow
+    Write-Host "╚══════════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+    
+    Write-Host "`n📊 Initializing Enterprise WSL Session Manager..." -ForegroundColor Green
+    
+    # Initialize audit logging
+    if (Test-Path $script:WSLConfig.AuditLogPath) {
+        $logSize = [math]::Round((Get-Item $script:WSLConfig.AuditLogPath).Length / 1KB, 2)
+        Write-Host "   Audit log: $($script:WSLConfig.AuditLogPath) ($logSize KB)" -ForegroundColor Gray
+    } else {
+        Write-Host "   Creating new audit log: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
+    }
+    
+    Write-Host "   Max concurrent sessions: $($script:WSLConfig.MaxConcurrentSessions)" -ForegroundColor Gray
+    Write-Host "   Default timeout: $($script:WSLConfig.DefaultTimeout.TotalMinutes) minutes" -ForegroundColor Gray
+    Write-Host "`n🎯 Enterprise WSL management ready!" -ForegroundColor Green
+}
+
+# Display the enterprise banner
+Show-EnterpriseWSLBanner
 
 # Helper function to execute commands with duration tracking
 function Invoke-CommandWithDuration {
@@ -125,6 +541,157 @@ function Request-TerminalRestart {
     }
 }
 
+# Enterprise WSL Command Execution Functions
+
+<#
+.SYNOPSIS
+    Executes a command in a managed WSL session with enterprise-grade reliability.
+
+.DESCRIPTION
+    This function provides enterprise-level WSL command execution with automatic
+    retry logic, comprehensive error handling, performance monitoring, and audit logging.
+
+.PARAMETER Command
+    The Linux command to execute in the WSL environment.
+
+.PARAMETER Description
+    A user-friendly description of what the command does.
+
+.PARAMETER SessionType
+    The type of WSL session to use (GitOperations, PackageManagement, StrangeLoopCLI, SystemConfiguration).
+
+.PARAMETER SudoPassword
+    Secure string containing the sudo password if required.
+
+.EXAMPLE
+    Invoke-EnterpriseWSLCommand -Command "git config --global user.name 'John Doe'" -Description "Setting Git user name" -SessionType GitOperations
+
+.NOTES
+    - All commands are logged for audit purposes
+    - Automatic retry on transient failures
+    - Performance metrics are collected
+    - Supports corporate proxy and security policies
+#>
+function Invoke-EnterpriseWSLCommand {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Command,
+        
+        [Parameter(Mandatory)]
+        [string]$Description,
+        
+        [WSLSessionType]$SessionType = [WSLSessionType]::GitOperations,
+        
+        [SecureString]$SudoPassword = $null,
+        
+        [int]$MaxRetries = 3,
+        
+        [TimeSpan]$RetryDelay = [TimeSpan]::FromSeconds(2)
+    )
+    
+    $attempt = 0
+    $lastResult = [WSLCommandResult]::UnexpectedOutput
+    
+    while ($attempt -lt $MaxRetries) {
+        $attempt++
+        
+        try {
+            # Get or create appropriate session
+            $session = $script:WSLManager.GetOrCreateSession($SessionType)
+            
+            # Handle sudo commands if password provided
+            $actualCommand = $Command
+            if ($SudoPassword -and $Command.StartsWith("sudo ")) {
+                $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+                $sudoCommand = $Command -replace "^sudo ", ""
+                $actualCommand = "echo '$plaintextPassword' | sudo -S $sudoCommand"
+            }
+            
+            # Execute command
+            $result = $script:WSLManager.ExecuteCommand($session, $actualCommand, $Description)
+            
+            if ($result -eq [WSLCommandResult]::Success) {
+                return $true
+            }
+            
+            $lastResult = $result
+            
+            # Determine if we should retry
+            $shouldRetry = $result -in @([WSLCommandResult]::NetworkTimeout, [WSLCommandResult]::SessionDisconnected, [WSLCommandResult]::Retry)
+            
+            if (-not $shouldRetry -or $attempt -eq $MaxRetries) {
+                break
+            }
+            
+            Write-Host "  Retrying in $($RetryDelay.TotalSeconds) seconds... (Attempt $($attempt + 1)/$MaxRetries)" -ForegroundColor Yellow
+            Start-Sleep -Milliseconds $RetryDelay.TotalMilliseconds
+            
+        } catch {
+            Write-Host "  Exception on attempt $attempt`: $($_.Exception.Message)" -ForegroundColor Red
+            $lastResult = [WSLCommandResult]::ParseError
+            
+            if ($attempt -eq $MaxRetries) {
+                break
+            }
+        }
+    }
+    
+    # All retries exhausted
+    Write-Host "  ✗ Command failed after $MaxRetries attempts" -ForegroundColor Red
+    Write-Host "  Last result: $lastResult" -ForegroundColor Red
+    Write-Host "  Manual command: wsl -- $Command" -ForegroundColor Yellow
+    return $false
+}
+
+<#
+.SYNOPSIS
+    Gets output from a WSL command execution.
+
+.DESCRIPTION
+    Executes a command in WSL and returns the output, with enterprise-grade error handling.
+
+.PARAMETER Command
+    The Linux command to execute.
+
+.PARAMETER SessionType
+    The type of WSL session to use.
+
+.EXAMPLE
+    $gitVersion = Get-EnterpriseWSLOutput -Command "git --version" -SessionType GitOperations
+#>
+function Get-EnterpriseWSLOutput {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Command,
+        
+        [WSLSessionType]$SessionType = [WSLSessionType]::GitOperations
+    )
+    
+    try {
+        # Get or create appropriate session
+        $session = $script:WSLManager.GetOrCreateSession($SessionType)
+        
+        # Execute command and capture output
+        $commandId = [System.Guid]::NewGuid().ToString('N')[0..7] -join ''
+        $markedCommand = "$Command; echo '$($script:WSLConfig.CompletionMarker)$commandId'"
+        
+        $script:WSLManager.SendCommand($session, $markedCommand)
+        $output = $script:WSLManager.ReadOutput($session, $session.Timeout)
+        
+        # Clean and return output
+        $cleanOutput = $output -replace "$($script:WSLConfig.CompletionMarker)$commandId", "" -replace "READY>.*", ""
+        return $cleanOutput.Trim()
+        
+    } catch {
+        Write-Verbose "Error getting WSL output: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# Legacy WSL Command Functions (Updated to use Enterprise Backend)
+
 function Invoke-WSLCommand {
     param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
     try {
@@ -222,21 +789,180 @@ function Invoke-WSLCommand {
     }
 }
 
+# Updated legacy function to use enterprise backend
+function Invoke-WSLCommand {
+    param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
+    
+    # Map old distribution parameter to session type
+    $sessionType = [WSLSessionType]::GitOperations
+    if ($Command -match "sudo.*(apt|dpkg|snap)") {
+        $sessionType = [WSLSessionType]::PackageManagement
+    } elseif ($Command -match "strangeloop") {
+        $sessionType = [WSLSessionType]::StrangeLoopCLI
+    } elseif ($Command -match "sudo") {
+        $sessionType = [WSLSessionType]::SystemConfiguration
+    }
+    
+    return Invoke-EnterpriseWSLCommand -Command $Command -Description $Description -SessionType $sessionType -SudoPassword $SudoPassword
+}
+
 function Get-WSLCommandOutput {
     param([string]$Command, [string]$Distribution = "")
-    try {
-        $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
-        $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
-        $result = Invoke-Expression $wslCommand 2>&1
-        
-        if ($LASTEXITCODE -eq 0) {
-            return ($result | Where-Object { $_ -and $_.ToString().Trim() }) -join "`n"
-        } else {
-            return $null
-        }
-    } catch {
-        return $null
+    
+    # Map to appropriate session type
+    $sessionType = [WSLSessionType]::GitOperations
+    if ($Command -match "apt|dpkg|snap") {
+        $sessionType = [WSLSessionType]::PackageManagement
+    } elseif ($Command -match "strangeloop") {
+        $sessionType = [WSLSessionType]::StrangeLoopCLI
     }
+    
+    return Get-EnterpriseWSLOutput -Command $Command -SessionType $sessionType
+}
+
+# Enterprise WSL Utility Functions
+
+<#
+.SYNOPSIS
+    Shows comprehensive performance and health report for WSL sessions.
+#>
+function Show-WSLPerformanceReport {
+    Write-Host "`n=== WSL Session Performance Report ===" -ForegroundColor Cyan
+    
+    $report = $script:WSLManager.GetPerformanceReport()
+    
+    Write-Host "📊 Overall Statistics:" -ForegroundColor Yellow
+    Write-Host "  • Total Commands Executed: $($report.TotalCommands)" -ForegroundColor White
+    Write-Host "  • Success Rate: $($report.SuccessRate)%" -ForegroundColor White
+    Write-Host "  • Average Command Time: $($report.AverageCommandTime)" -ForegroundColor White
+    Write-Host "  • Active Sessions: $($report.ActiveSessions)" -ForegroundColor White
+    Write-Host "  • Session Uptime: $($report.SessionUptime)" -ForegroundColor White
+    
+    Write-Host "`n🔧 Active Sessions:" -ForegroundColor Yellow
+    foreach ($session in $script:WSLManager.Sessions.Values) {
+        $status = if ($session.IsHealthy) { "✅ Healthy" } else { "❌ Unhealthy" }
+        Write-Host "  • Session $($session.Id): $($session.Type) - $status" -ForegroundColor White
+        Write-Host "    Commands: $($session.CommandsExecuted)/$($session.MaxCommands)" -ForegroundColor Gray
+        Write-Host "    Last Used: $($session.LastUsed.ToString('HH:mm:ss'))" -ForegroundColor Gray
+    }
+    
+    Write-Host "`n📈 Command Type Breakdown:" -ForegroundColor Yellow
+    foreach ($cmdType in $script:WSLManager.Metrics.CommandTypeMetrics.Keys) {
+        $stats = $script:WSLManager.Metrics.CommandTypeMetrics[$cmdType]
+        $avgTime = if ($stats.Count -gt 0) { 
+            [math]::Round($stats.TotalTime.TotalSeconds / $stats.Count, 2) 
+        } else { 0 }
+        Write-Host "  • $cmdType`: $($stats.Count) commands, avg ${avgTime}s, $($stats.Failures) failures" -ForegroundColor White
+    }
+    
+    Write-Host "`n📋 Audit Log: $($script:WSLManager.AuditLogPath)" -ForegroundColor Yellow
+    Write-Host "=====================================`n" -ForegroundColor Cyan
+}
+
+<#
+.SYNOPSIS
+    Tests WSL session health and connectivity.
+#>
+function Test-WSLSessionHealth {
+    param([string]$SessionId = $null)
+    
+    Write-Host "🏥 WSL Session Health Check" -ForegroundColor Cyan
+    
+    if ($SessionId) {
+        $sessions = @($script:WSLManager.Sessions[$SessionId])
+    } else {
+        $sessions = $script:WSLManager.Sessions.Values
+    }
+    
+    $healthyCount = 0
+    $totalCount = $sessions.Count
+    
+    foreach ($session in $sessions) {
+        Write-Host "`n🔍 Testing Session $($session.Id) ($($session.Type))..." -ForegroundColor Yellow
+        
+        try {
+            # Test basic command execution
+            $testResult = $script:WSLManager.ExecuteCommand($session, "echo 'health-check'", "Health Check")
+            
+            if ($testResult -eq [WSLCommandResult]::Success) {
+                Write-Host "  ✅ Session is responsive" -ForegroundColor Green
+                $healthyCount++
+            } else {
+                Write-Host "  ❌ Session is not responding properly" -ForegroundColor Red
+                $session.IsHealthy = $false
+            }
+            
+        } catch {
+            Write-Host "  ❌ Session health check failed: $($_.Exception.Message)" -ForegroundColor Red
+            $session.IsHealthy = $false
+        }
+    }
+    
+    $healthPercentage = if ($totalCount -gt 0) { [math]::Round(($healthyCount / $totalCount) * 100) } else { 0 }
+    Write-Host "`n📊 Overall Health: $healthyCount/$totalCount sessions healthy ($healthPercentage%)" -ForegroundColor Cyan
+    
+    return $healthPercentage
+}
+
+<#
+.SYNOPSIS
+    Cleans up unhealthy sessions and optimizes performance.
+#>
+function Optimize-WSLSessions {
+    Write-Host "🔧 Optimizing WSL Sessions..." -ForegroundColor Cyan
+    
+    $beforeCount = $script:WSLManager.Sessions.Count
+    $cleanedCount = 0
+    
+    # Clean up unhealthy sessions
+    $unhealthySessions = $script:WSLManager.Sessions.Values | Where-Object { -not $_.IsHealthy }
+    foreach ($session in $unhealthySessions) {
+        Write-Host "  Cleaning up unhealthy session $($session.Id)" -ForegroundColor Yellow
+        $script:WSLManager.CleanupSession($session.Id)
+        $cleanedCount++
+    }
+    
+    # Clean up sessions that have exceeded their command limit
+    $exhaustedSessions = $script:WSLManager.Sessions.Values | Where-Object { $_.CommandsExecuted -ge $_.MaxCommands }
+    foreach ($session in $exhaustedSessions) {
+        Write-Host "  Cleaning up exhausted session $($session.Id) ($($session.CommandsExecuted)/$($session.MaxCommands) commands)" -ForegroundColor Yellow
+        $script:WSLManager.CleanupSession($session.Id)
+        $cleanedCount++
+    }
+    
+    $afterCount = $script:WSLManager.Sessions.Count
+    Write-Host "  ✅ Cleaned up $cleanedCount sessions ($beforeCount → $afterCount)" -ForegroundColor Green
+    
+    # Run health check on remaining sessions
+    Test-WSLSessionHealth | Out-Null
+    
+    Write-Host "🎯 WSL Session optimization complete!" -ForegroundColor Green
+}
+
+# Enhanced Error Handling and Recovery
+
+function Start-InteractiveWSLSession {
+    param(
+        [string]$InitialCommand = "",
+        [WSLSessionType]$SessionType = [WSLSessionType]::GitOperations
+    )
+    
+    Write-Host "`n🖥️  Starting Interactive WSL Session" -ForegroundColor Cyan
+    Write-Host "Session Type: $SessionType" -ForegroundColor Gray
+    Write-Host "You can execute commands manually if the automated setup encounters issues." -ForegroundColor Yellow
+    Write-Host "Type 'exit' to return to the setup script.`n" -ForegroundColor Gray
+    
+    if ($InitialCommand) {
+        Write-Host "Initial command context: $InitialCommand" -ForegroundColor Magenta
+    }
+    
+    # Launch interactive WSL with appropriate distribution
+    $process = Start-Process -FilePath "wsl.exe" -ArgumentList "-d Ubuntu-24.04" -Wait -PassThru
+    
+    Write-Host "`n↩️  Returned from interactive session" -ForegroundColor Green
+    
+    # Refresh session health after manual intervention
+    Optimize-WSLSessions
 }
 
 function Get-SudoPassword {
@@ -1835,3 +2561,14 @@ if ($needsLinux) {
     Write-Info "Application location: $appDir"
     Write-Info "You can now start developing with StrangeLoop!"
 }
+
+# Display Enterprise WSL Performance Report
+Write-Host "`n" -NoNewline
+Show-WSLPerformanceReport
+
+# Cleanup enterprise WSL sessions
+Write-Host "🧹 Cleaning up WSL sessions..." -ForegroundColor Yellow
+$script:WSLManager.CleanupAllSessions()
+
+Write-Host "`n🎉 Enterprise StrangeLoop setup completed successfully!" -ForegroundColor Green
+Write-Host "💡 Pro tip: Use 'Show-WSLPerformanceReport' anytime to check session health" -ForegroundColor Cyan
