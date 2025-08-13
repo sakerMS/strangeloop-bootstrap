@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.2 - Enhanced Enterprise          ║
+║                    Version 7.3 - Enhanced Enterprise          ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -1880,7 +1880,7 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                     # Pass the global variables to the WSL command
                     $gitUserEmail = $global:GitUserEmail
                     $gitUserName = $global:GitUserName
-                    $gitdefaultBranch = $global:GitDefaultBranch
+                    $gitdefaultBranch = "main"
 
                     Invoke-WSLCommand -Description "Configuring complete Git setup" -Distribution $ubuntuDistro -ScriptBlock {
                         # Configure Git user information using globally captured credentials
