@@ -101,6 +101,30 @@ function Test-Command {
     }
 }
 
+function Request-TerminalRestart {
+    param(
+        [string]$Tool,
+        [string]$Reason = "PATH changes require a terminal restart"
+    )
+    
+    Write-Host ""
+    Write-Host "🔄 Terminal Restart Required for $Tool" -ForegroundColor Yellow
+    Write-Host "$Reason" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Please:" -ForegroundColor Yellow
+    Write-Host "1. Close this PowerShell window" -ForegroundColor White
+    Write-Host "2. Open a new PowerShell window" -ForegroundColor White
+    Write-Host "3. Run this script again to continue the setup" -ForegroundColor White
+    Write-Host ""
+    Write-Host "The script will detect that $Tool is now available and continue from where it left off." -ForegroundColor Cyan
+    Write-Host ""
+    
+    $restartChoice = Read-Host "Press Enter to exit and restart terminal manually, or type 'continue' to try proceeding anyway"
+    if ($restartChoice -notmatch "continue") {
+        exit 0
+    }
+}
+
 function Invoke-WSLCommand {
     param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
     try {
@@ -391,7 +415,18 @@ if (-not $SkipPrerequisites) {
                             Write-Info "Installed version: $azVersion"
                         }
                     } else {
-                        throw "Azure CLI installation failed - 'az' command not found in PATH after installation"
+                        Write-Warning "Azure CLI was installed but is not immediately available in the current session."
+                        Write-Host ""
+                        Write-Host "🔄 Terminal Restart Required" -ForegroundColor Yellow
+                        Write-Host "Azure CLI installation was successful, but the PATH changes require a terminal restart." -ForegroundColor Cyan
+                        Write-Host ""
+                        Write-Host "Please:" -ForegroundColor Yellow
+                        Write-Host "1. Close this PowerShell window" -ForegroundColor White
+                        Write-Host "2. Open a new PowerShell window" -ForegroundColor White
+                        Write-Host "3. Run this script again to continue the setup" -ForegroundColor White
+                        Write-Host ""
+                        Write-Host "The script will detect that Azure CLI is now available and continue from where it left off." -ForegroundColor Cyan
+                        exit 0
                     }
                 }
             } catch {
@@ -482,7 +517,18 @@ Read-Host "Press Enter to close this window"
                                 }
                                 
                                 if (-not (Test-Command "az")) {
-                                    throw "Azure CLI was installed but is not available in PATH. Please restart your terminal."
+                                    Write-Warning "Azure CLI was installed but is not immediately available in the current session."
+                                    Write-Host ""
+                                    Write-Host "🔄 Terminal Restart Required" -ForegroundColor Yellow
+                                    Write-Host "Azure CLI installation was successful, but the PATH changes require a terminal restart." -ForegroundColor Cyan
+                                    Write-Host ""
+                                    Write-Host "Please:" -ForegroundColor Yellow
+                                    Write-Host "1. Close this PowerShell window" -ForegroundColor White
+                                    Write-Host "2. Open a new PowerShell window" -ForegroundColor White
+                                    Write-Host "3. Run this script again to continue the setup" -ForegroundColor White
+                                    Write-Host ""
+                                    Write-Host "The script will detect that Azure CLI is now available and continue from where it left off." -ForegroundColor Cyan
+                                    exit 0
                                 }
                             } else {
                                 throw "Elevated Azure CLI installation failed: $result"
@@ -567,7 +613,24 @@ Read-Host "Press Enter to close this window"
                         
                         if (-not $dockerReady) {
                             Write-Warning "Docker Desktop was installed but may not be fully ready yet."
-                            Write-Info "Please wait a few more minutes for Docker Desktop to complete startup."
+                            Write-Host ""
+                            Write-Host "🔄 Terminal Restart Recommended" -ForegroundColor Yellow
+                            Write-Host "Docker Desktop installation was successful, but may require a terminal restart for full functionality." -ForegroundColor Cyan
+                            Write-Host ""
+                            Write-Host "Recommended steps:" -ForegroundColor Yellow
+                            Write-Host "1. Close this PowerShell window" -ForegroundColor White
+                            Write-Host "2. Open a new PowerShell window" -ForegroundColor White
+                            Write-Host "3. Wait for Docker Desktop to complete startup (check system tray)" -ForegroundColor White
+                            Write-Host "4. Run this script again to continue the setup" -ForegroundColor White
+                            Write-Host ""
+                            Write-Host "Alternatively, you can wait a few more minutes and the script will continue automatically." -ForegroundColor Cyan
+                            
+                            # Give user a choice
+                            $continueChoice = Read-Host "`nContinue waiting (c) or restart terminal now (r)? [c/r]"
+                            if ($continueChoice -match '^[Rr]') {
+                                Write-Info "Please restart your terminal and run this script again."
+                                exit 0
+                            }
                         }
                     }
                 } elseif ($process.ExitCode -eq 1603) {
@@ -638,7 +701,18 @@ Read-Host "Press Enter to close this window"
                             
                             if ($result -eq "SUCCESS") {
                                 Write-Success "Docker Desktop installed successfully in elevated session"
-                                Write-Info "Docker Desktop is starting up. Please wait for it to complete initialization."
+                                Write-Host ""
+                                Write-Host "🔄 Terminal Restart Required for Docker" -ForegroundColor Yellow
+                                Write-Host "Docker Desktop installation was successful, but requires a terminal restart." -ForegroundColor Cyan
+                                Write-Host ""
+                                Write-Host "Please:" -ForegroundColor Yellow
+                                Write-Host "1. Close this PowerShell window" -ForegroundColor White
+                                Write-Host "2. Wait for Docker Desktop to complete startup (check system tray icon)" -ForegroundColor White
+                                Write-Host "3. Open a new PowerShell window" -ForegroundColor White
+                                Write-Host "4. Run this script again to continue the setup" -ForegroundColor White
+                                Write-Host ""
+                                Write-Host "The script will detect that Docker is now available and continue from where it left off." -ForegroundColor Cyan
+                                exit 0
                             } else {
                                 throw "Elevated Docker Desktop installation failed: $result"
                             }
