@@ -289,35 +289,32 @@ if (-not $SkipPrerequisites) {
     $missingPrereqs = @()
     
     foreach ($prereq in $prerequisites.GetEnumerator()) {
-        Invoke-CommandWithDuration -Description "Checking $($prereq.Key)" -ScriptBlock {
-            if (Test-Command $prereq.Value) {
-                # Get version information for better visibility
-                $version = ""
-                try {
-                    switch ($prereq.Value) {
-                        "az" { $version = (az version --output json 2>$null | ConvertFrom-Json).'azure-cli' }
-                        "git" { $version = (git --version 2>$null) -replace "git version ", "" }
-                        "git-lfs" { 
-                            $lfsOutput = git lfs version 2>$null
-                            if ($lfsOutput -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)") {
-                                $version = $matches[1]
-                            }
+        Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Checking $($prereq.Key)..." -ForegroundColor Yellow
+        if (Test-Command $prereq.Value) {
+            # Get version information for better visibility
+            $version = ""
+            try {
+                switch ($prereq.Value) {
+                    "az" { $version = (az version --output json 2>$null | ConvertFrom-Json).'azure-cli' }
+                    "git" { $version = (git --version 2>$null) -replace "git version ", "" }
+                    "git-lfs" { 
+                        $lfsOutput = git lfs version 2>$null
+                        if ($lfsOutput -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)") {
+                            $version = $matches[1]
                         }
                     }
-                    if ($version) {
-                        Write-Success "$($prereq.Key) is installed (version: $version)"
-                    } else {
-                        Write-Success "$($prereq.Key) is installed"
-                    }
-                } catch {
+                }
+                if ($version) {
+                    Write-Success "$($prereq.Key) is installed (version: $version)"
+                } else {
                     Write-Success "$($prereq.Key) is installed"
                 }
-                return $true
-            } else {
-                Write-Error "$($prereq.Key) is missing"
-                $missingPrereqs += $prereq.Key
-                return $false
+            } catch {
+                Write-Success "$($prereq.Key) is installed"
             }
+        } else {
+            Write-Error "$($prereq.Key) is missing"
+            $missingPrereqs += $prereq.Key
         }
     }
     
@@ -340,7 +337,19 @@ if (-not $SkipPrerequisites) {
                     
                     # Install Azure CLI
                     Write-Info "Installing Azure CLI (this may take a few minutes)..."
-                    Start-Process msiexec.exe -ArgumentList "/i", $azCliInstaller, "/quiet", "/norestart" -Wait -NoNewWindow
+                    $process = Start-Process msiexec.exe -ArgumentList "/i", $azCliInstaller, "/quiet", "/norestart" -Wait -NoNewWindow -PassThru
+                    
+                    if ($process.ExitCode -ne 0) {
+                        if ($process.ExitCode -eq 1603) {
+                            throw "Azure CLI installation blocked (Exit Code 1603). This typically indicates Group Policy restrictions or insufficient privileges. Try running as Administrator or contact your system administrator."
+                        } elseif ($process.ExitCode -eq 1260) {
+                            throw "Azure CLI installation blocked by Group Policy (Exit Code 1260). Contact your system administrator to temporarily allow MSI installations."
+                        } else {
+                            throw "Azure CLI MSI installation failed with exit code: $($process.ExitCode)"
+                        }
+                    }
+                    
+                    Write-Success "Azure CLI MSI installation completed successfully"
                     
                     # Cleanup
                     Remove-Item $azCliInstaller -Force -ErrorAction SilentlyContinue
@@ -350,24 +359,152 @@ if (-not $SkipPrerequisites) {
                     $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
                     $env:Path = $machinePath + ";" + $userPath
                     
-                    # Verify installation
-                    if (Test-Command "az") {
+                    # Wait a moment for the system to settle
+                    Start-Sleep -Seconds 3
+                    
+                    # Verify installation with multiple attempts
+                    $installSuccess = $false
+                    for ($i = 1; $i -le 3; $i++) {
+                        Write-Info "Verifying Azure CLI installation (attempt $i/3)..."
+                        if (Test-Command "az") {
+                            $installSuccess = $true
+                            break
+                        }
+                        Start-Sleep -Seconds 2
+                        # Refresh PATH again
+                        $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+                        $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+                        $env:Path = $machinePath + ";" + $userPath
+                    }
+                    
+                    if ($installSuccess) {
                         Write-Success "Azure CLI installed successfully"
                         $azVersion = az version --output tsv --query '"azure-cli"' 2>$null
                         if ($azVersion) {
                             Write-Info "Installed version: $azVersion"
                         }
                     } else {
-                        throw "Azure CLI installation failed - 'az' command not found in PATH"
+                        throw "Azure CLI installation failed - 'az' command not found in PATH after installation"
                     }
                 }
             } catch {
-                Write-Error "Azure CLI installation failed: $($_.Exception.Message)"
-                Write-Info "Please install Azure CLI manually:"
-                Write-Info "1. Download from: https://aka.ms/installazurecliwindows"
-                Write-Info "2. Run the installer"
-                Write-Info "3. Restart your terminal and run this script again"
-                exit 1
+                # If the error mentions Group Policy or privileges, try elevated installation
+                if ($_.Exception.Message -match "1603|Group Policy|privileges") {
+                    Write-Warning "Azure CLI installation failed due to Group Policy restrictions or insufficient privileges"
+                    Write-Info "Attempting elevated installation in Administrator PowerShell window..."
+                    
+                    try {
+                        # Create a script to run in elevated session
+                        $elevatedScript = @"
+Write-Host "Installing Azure CLI (Elevated Session)..." -ForegroundColor Green
+Write-Host "Please wait while Azure CLI is being installed..." -ForegroundColor Yellow
+
+try {
+    # Download Azure CLI installer
+    `$azCliUrl = "https://aka.ms/installazurecliwindows"
+    `$azCliInstaller = "`$env:TEMP\AzureCLI.msi"
+    
+    Write-Host "Downloading Azure CLI installer..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri `$azCliUrl -OutFile `$azCliInstaller -UseBasicParsing
+    
+    # Install Azure CLI with elevated privileges
+    Write-Host "Installing Azure CLI (this may take several minutes)..." -ForegroundColor Cyan
+    `$process = Start-Process msiexec.exe -ArgumentList "/i", `$azCliInstaller, "/quiet", "/norestart" -Wait -PassThru -NoNewWindow
+    
+    # Clean up installer
+    Remove-Item `$azCliInstaller -Force -ErrorAction SilentlyContinue
+    
+    if (`$process.ExitCode -eq 0) {
+        Write-Host "Azure CLI installed successfully!" -ForegroundColor Green
+        "SUCCESS" | Out-File -FilePath "`$env:TEMP\az-install-result.txt" -Encoding UTF8
+    } else {
+        Write-Host "Azure CLI installation failed with exit code: `$(`$process.ExitCode)" -ForegroundColor Red
+        "FAILED:`$(`$process.ExitCode)" | Out-File -FilePath "`$env:TEMP\az-install-result.txt" -Encoding UTF8
+    }
+} catch {
+    Write-Host "Azure CLI installation failed: `$(`$_.Exception.Message)" -ForegroundColor Red
+    "FAILED:`$(`$_.Exception.Message)" | Out-File -FilePath "`$env:TEMP\az-install-result.txt" -Encoding UTF8
+}
+
+Write-Host "Installation process completed. You can close this window." -ForegroundColor Yellow
+Read-Host "Press Enter to close this window"
+"@
+                        
+                        # Save the script to a temporary file
+                        $tempScript = "$env:TEMP\install-az-elevated.ps1"
+                        $elevatedScript | Out-File -FilePath $tempScript -Encoding UTF8
+                        
+                        # Remove any existing result file
+                        Remove-Item "$env:TEMP\az-install-result.txt" -Force -ErrorAction SilentlyContinue
+                        
+                        # Launch elevated PowerShell window
+                        Write-Host "Please complete the UAC prompt to install Azure CLI with administrator privileges..." -ForegroundColor Yellow
+                        Start-Process powershell.exe -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$tempScript`"" -Verb RunAs -Wait
+                        
+                        # Check result file
+                        $resultFile = "$env:TEMP\az-install-result.txt"
+                        if (Test-Path $resultFile) {
+                            $result = Get-Content $resultFile -ErrorAction SilentlyContinue
+                            Remove-Item $resultFile -Force -ErrorAction SilentlyContinue
+                            
+                            if ($result -eq "SUCCESS") {
+                                Write-Success "Azure CLI installed successfully in elevated session"
+                                
+                                # Refresh PATH and verify installation
+                                $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+                                $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+                                $env:Path = $machinePath + ";" + $userPath
+                                
+                                # Wait and verify installation
+                                Start-Sleep -Seconds 3
+                                for ($i = 1; $i -le 5; $i++) {
+                                    Write-Info "Verifying Azure CLI installation (attempt $i/5)..."
+                                    if (Test-Command "az") {
+                                        Write-Success "Azure CLI is now available"
+                                        $azVersion = az version --output tsv --query '"azure-cli"' 2>$null
+                                        if ($azVersion) {
+                                            Write-Info "Installed version: $azVersion"
+                                        }
+                                        break
+                                    }
+                                    Start-Sleep -Seconds 2
+                                    # Refresh PATH again
+                                    $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+                                    $userPath = [System.Environment]::GetEnvironmentVariable("Path","User")
+                                    $env:Path = $machinePath + ";" + $userPath
+                                }
+                                
+                                if (-not (Test-Command "az")) {
+                                    throw "Azure CLI was installed but is not available in PATH. Please restart your terminal."
+                                }
+                            } else {
+                                throw "Elevated Azure CLI installation failed: $result"
+                            }
+                        } else {
+                            throw "Could not determine Azure CLI installation status"
+                        }
+                        
+                        # Clean up temp script
+                        Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                        
+                    } catch {
+                        Write-Error "Elevated Azure CLI installation failed: $($_.Exception.Message)"
+                        Write-Host ""
+                        Write-Host "📋 Manual Installation Required:" -ForegroundColor Red
+                        Write-Host "1. Download Azure CLI from: https://aka.ms/installazurecliwindows" -ForegroundColor Yellow
+                        Write-Host "2. Right-click the installer and select 'Run as Administrator'" -ForegroundColor Yellow
+                        Write-Host "3. Complete the installation" -ForegroundColor Yellow
+                        Write-Host "4. Restart your terminal and run this script again" -ForegroundColor Yellow
+                        exit 1
+                    }
+                } else {
+                    Write-Error "Azure CLI installation failed: $($_.Exception.Message)"
+                    Write-Info "Please install Azure CLI manually:"
+                    Write-Info "1. Download from: https://aka.ms/installazurecliwindows"
+                    Write-Info "2. Run the installer"
+                    Write-Info "3. Restart your terminal and run this script again"
+                    exit 1
+                }
             }
         }
         
