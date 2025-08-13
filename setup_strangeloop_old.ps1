@@ -1083,10 +1083,165 @@ if (-not $SkipDevelopmentTools) {
     Write-Info "Setting up Docker..."
     Invoke-CommandWithDuration -Description "Setting up Docker" -ScriptBlock {
         if (-not (Test-Command "docker")) {
-            Write-Info "Docker not found. Please install Docker Desktop manually:"
-            Write-Info "https://www.docker.com/products/docker-desktop/"
-            if ($needsLinux) {
-                Write-Warning "After installing Docker Desktop, enable WSL 2 integration for $ubuntuDistro in Docker Desktop settings"
+            Write-Info "Docker not found. Attempting to install Docker Desktop automatically..."
+            
+            try {
+                # First try standard installation
+                Write-Info "Downloading Docker Desktop installer..."
+                $dockerUrl = "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe"
+                $dockerInstaller = "$env:TEMP\DockerDesktopInstaller.exe"
+                
+                Invoke-WebRequest -Uri $dockerUrl -OutFile $dockerInstaller -UseBasicParsing
+                Write-Success "Docker Desktop installer downloaded"
+                
+                Write-Info "Installing Docker Desktop (this may take several minutes)..."
+                $process = Start-Process $dockerInstaller -ArgumentList "install", "--quiet", "--accept-license" -Wait -PassThru -NoNewWindow
+                
+                # Cleanup installer
+                Remove-Item $dockerInstaller -Force -ErrorAction SilentlyContinue
+                
+                if ($process.ExitCode -eq 0) {
+                    Write-Success "Docker Desktop installed successfully"
+                    
+                    # Docker Desktop requires a restart or logout/login, but we can check if it's starting up
+                    Write-Info "Docker Desktop installation completed. Starting Docker Desktop service..."
+                    
+                    # Try to start Docker Desktop
+                    $dockerDesktopPath = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+                    if (Test-Path $dockerDesktopPath) {
+                        Start-Process $dockerDesktopPath -NoNewWindow
+                        Write-Info "Docker Desktop is starting up. This may take a few minutes..."
+                        
+                        # Wait for Docker to become available (up to 2 minutes)
+                        $maxWaitTime = 120
+                        $waitTime = 0
+                        $dockerReady = $false
+                        
+                        while ($waitTime -lt $maxWaitTime -and -not $dockerReady) {
+                            Start-Sleep -Seconds 5
+                            $waitTime += 5
+                            Write-Info "Waiting for Docker to start... ($waitTime/$maxWaitTime seconds)"
+                            
+                            try {
+                                $dockerVersion = docker --version 2>$null
+                                if ($dockerVersion) {
+                                    $dockerReady = $true
+                                    Write-Success "Docker is now available: $dockerVersion"
+                                    break
+                                }
+                            } catch { }
+                        }
+                        
+                        if (-not $dockerReady) {
+                            Write-Warning "Docker Desktop was installed but may not be fully ready yet."
+                            Write-Info "Please wait a few more minutes for Docker Desktop to complete startup."
+                            Write-Info "You may need to restart your computer if Docker doesn't start automatically."
+                        }
+                    }
+                } elseif ($process.ExitCode -eq 1603) {
+                    throw "Docker Desktop installation blocked (Exit Code 1603). This typically indicates Group Policy restrictions or insufficient privileges."
+                } else {
+                    throw "Docker Desktop installation failed with exit code: $($process.ExitCode)"
+                }
+                
+            } catch {
+                # If installation fails, try elevated installation
+                if ($_.Exception.Message -match "1603|Group Policy|privileges") {
+                    Write-Warning "Docker Desktop installation failed due to Group Policy restrictions or insufficient privileges"
+                    Write-Info "Attempting elevated installation in Administrator PowerShell window..."
+                    
+                    try {
+                        # Create a script to run in elevated session
+                        $elevatedScript = @"
+Write-Host "Installing Docker Desktop (Elevated Session)..." -ForegroundColor Green
+Write-Host "Please wait while Docker Desktop is being installed..." -ForegroundColor Yellow
+
+try {
+    # Download Docker Desktop installer
+    `$dockerUrl = "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe"
+    `$dockerInstaller = "`$env:TEMP\DockerDesktopInstaller.exe"
+    
+    Write-Host "Downloading Docker Desktop installer..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri `$dockerUrl -OutFile `$dockerInstaller -UseBasicParsing
+    
+    # Install Docker Desktop with elevated privileges
+    Write-Host "Installing Docker Desktop (this may take several minutes)..." -ForegroundColor Cyan
+    `$process = Start-Process `$dockerInstaller -ArgumentList "install", "--quiet", "--accept-license" -Wait -PassThru -NoNewWindow
+    
+    # Clean up installer
+    Remove-Item `$dockerInstaller -Force -ErrorAction SilentlyContinue
+    
+    if (`$process.ExitCode -eq 0) {
+        Write-Host "Docker Desktop installed successfully!" -ForegroundColor Green
+        "SUCCESS" | Out-File -FilePath "`$env:TEMP\docker-install-result.txt" -Encoding UTF8
+    } else {
+        Write-Host "Docker Desktop installation failed with exit code: `$(`$process.ExitCode)" -ForegroundColor Red
+        "FAILED:`$(`$process.ExitCode)" | Out-File -FilePath "`$env:TEMP\docker-install-result.txt" -Encoding UTF8
+    }
+} catch {
+    Write-Host "Docker Desktop installation failed: `$(`$_.Exception.Message)" -ForegroundColor Red
+    "FAILED:`$(`$_.Exception.Message)" | Out-File -FilePath "`$env:TEMP\docker-install-result.txt" -Encoding UTF8
+}
+
+Write-Host "Installation process completed. You can close this window." -ForegroundColor Yellow
+Read-Host "Press Enter to close this window"
+"@
+                        
+                        # Save the script to a temporary file
+                        $tempScript = "$env:TEMP\install-docker-elevated.ps1"
+                        $elevatedScript | Out-File -FilePath $tempScript -Encoding UTF8
+                        
+                        # Remove any existing result file
+                        Remove-Item "$env:TEMP\docker-install-result.txt" -Force -ErrorAction SilentlyContinue
+                        
+                        # Launch elevated PowerShell window
+                        Write-Host "Please complete the UAC prompt to install Docker Desktop with administrator privileges..." -ForegroundColor Yellow
+                        Start-Process powershell.exe -ArgumentList "-ExecutionPolicy", "Bypass", "-File", "`"$tempScript`"" -Verb RunAs -Wait
+                        
+                        # Check result file
+                        $resultFile = "$env:TEMP\docker-install-result.txt"
+                        if (Test-Path $resultFile) {
+                            $result = Get-Content $resultFile -ErrorAction SilentlyContinue
+                            Remove-Item $resultFile -Force -ErrorAction SilentlyContinue
+                            
+                            if ($result -eq "SUCCESS") {
+                                Write-Success "Docker Desktop installed successfully in elevated session"
+                                Write-Info "Docker Desktop is starting up. Please wait for it to complete initialization."
+                                Write-Warning "You may need to restart your computer for Docker Desktop to work properly."
+                            } else {
+                                throw "Elevated Docker Desktop installation failed: $result"
+                            }
+                        } else {
+                            throw "Could not determine Docker Desktop installation status"
+                        }
+                        
+                        # Clean up temp script
+                        Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                        
+                    } catch {
+                        Write-Error "Elevated Docker Desktop installation failed: $($_.Exception.Message)"
+                        Write-Host ""
+                        Write-Host "📋 Manual Installation Required:" -ForegroundColor Red
+                        Write-Host "1. Download Docker Desktop from: https://www.docker.com/products/docker-desktop/" -ForegroundColor Yellow
+                        Write-Host "2. Right-click the installer and select 'Run as Administrator'" -ForegroundColor Yellow
+                        Write-Host "3. Complete the installation and restart your computer" -ForegroundColor Yellow
+                        if ($needsLinux) {
+                            Write-Host "4. Enable WSL 2 integration for $ubuntuDistro in Docker Desktop settings" -ForegroundColor Yellow
+                        }
+                        Write-Host "5. Run this script again after Docker Desktop is ready" -ForegroundColor Yellow
+                        exit 1
+                    }
+                } else {
+                    Write-Error "Docker Desktop installation failed: $($_.Exception.Message)"
+                    Write-Info "Please install Docker Desktop manually:"
+                    Write-Info "1. Download from: https://www.docker.com/products/docker-desktop/"
+                    Write-Info "2. Run the installer"
+                    if ($needsLinux) {
+                        Write-Info "3. Enable WSL 2 integration for $ubuntuDistro in Docker Desktop settings"
+                    }
+                    Write-Info "4. Run this script again after installation"
+                    exit 1
+                }
             }
         } else {
             try {
@@ -1100,47 +1255,88 @@ if (-not $SkipDevelopmentTools) {
                 # Configure Docker engine based on development environment
                 Write-Info "Configuring Docker engine for your environment..."
                 
-                # Check if Docker Desktop CLI is available for engine switching
-                if (Test-Command "dockerdesktop") {
+                # Enhanced Docker engine configuration with multiple methods
+                $engineConfigured = $false
+                
+                # Method 1: Try DockerCli.exe for engine switching
+                $dockerCliPath = "C:\Program Files\Docker\Docker\DockerCli.exe"
+                if (Test-Path $dockerCliPath) {
                     if ($needsLinux) {
-                        Write-Info "Switching to Linux containers for WSL development..."
+                        Write-Info "Configuring Docker for Linux containers..."
                         try {
-                            & "C:\Program Files\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine 2>$null
+                            & $dockerCliPath -SwitchLinuxEngine 2>$null
                             if ($LASTEXITCODE -eq 0) {
                                 Write-Success "Docker configured for Linux containers"
+                                $engineConfigured = $true
                             } else {
-                                Write-Warning "Docker engine switch may have failed, but continuing..."
+                                Write-Info "Standard engine switch failed, trying alternative method..."
                             }
                         } catch {
-                            Write-Warning "Could not switch Docker engine automatically. Please ensure Linux containers are enabled in Docker Desktop."
+                            Write-Info "DockerCli engine switch failed, trying alternative method..."
                         }
                     } else {
-                        Write-Info "Switching to Windows containers for Windows-only development..."
+                        Write-Info "Configuring Docker for Windows containers..."
                         try {
-                            & "C:\Program Files\Docker\Docker\DockerCli.exe" -SwitchWindowsEngine 2>$null
+                            & $dockerCliPath -SwitchWindowsEngine 2>$null
                             if ($LASTEXITCODE -eq 0) {
                                 Write-Success "Docker configured for Windows containers"
+                                $engineConfigured = $true
                             } else {
-                                Write-Warning "Docker engine switch may have failed, but continuing..."
+                                Write-Info "Standard engine switch failed, trying alternative method..."
                             }
                         } catch {
-                            Write-Warning "Could not switch Docker engine automatically. Please configure Docker Desktop manually."
+                            Write-Info "DockerCli engine switch failed, trying alternative method..."
                         }
                     }
-                } else {
-                    # Alternative approach using Docker Desktop executable directly
+                }
+                
+                # Method 2: Try Docker Desktop CLI if available
+                if (-not $engineConfigured -and (Test-Command "dockerdesktop")) {
+                    try {
+                        if ($needsLinux) {
+                            & dockerdesktop -l 2>$null  # Switch to Linux
+                        } else {
+                            & dockerdesktop -w 2>$null  # Switch to Windows
+                        }
+                        if ($LASTEXITCODE -eq 0) {
+                            $containerType = if ($needsLinux) { "Linux" } else { "Windows" }
+                            Write-Success "Docker configured for $containerType containers using Docker Desktop CLI"
+                            $engineConfigured = $true
+                        }
+                    } catch {
+                        Write-Info "Docker Desktop CLI engine switch failed, using manual guidance..."
+                    }
+                }
+                
+                # Method 3: Provide manual guidance if automatic switching failed
+                if (-not $engineConfigured) {
                     $dockerDesktopPath = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
                     if (Test-Path $dockerDesktopPath) {
                         if ($needsLinux) {
                             Write-Info "Configuring Docker for Linux containers..."
                             Write-Host "  Please ensure Linux containers are enabled in Docker Desktop settings" -ForegroundColor Yellow
+                            Write-Host "  You can switch by right-clicking Docker Desktop system tray icon → Switch to Linux containers" -ForegroundColor Yellow
+                            if ($ubuntuDistro) {
+                                Write-Host "  Also enable WSL 2 integration for $ubuntuDistro in Docker Desktop → Settings → Resources → WSL Integration" -ForegroundColor Yellow
+                            }
                         } else {
                             Write-Info "Configuring Docker for Windows containers..."
                             Write-Host "  Please ensure Windows containers are enabled in Docker Desktop settings" -ForegroundColor Yellow
+                            Write-Host "  You can switch by right-clicking Docker Desktop system tray icon → Switch to Windows containers" -ForegroundColor Yellow
                         }
                     } else {
                         Write-Warning "Docker Desktop not found in default location. Please configure engine manually."
+                        Write-Info "Expected location: $dockerDesktopPath"
                     }
+                }
+                
+                # Additional configuration for WSL integration
+                if ($needsLinux -and $ubuntuDistro) {
+                    Write-Info "Ensuring WSL 2 integration is enabled for $ubuntuDistro..."
+                    Write-Host "  If Docker commands don't work in WSL, please:" -ForegroundColor Yellow
+                    Write-Host "  1. Open Docker Desktop → Settings → Resources → WSL Integration" -ForegroundColor Yellow
+                    Write-Host "  2. Enable integration for $ubuntuDistro" -ForegroundColor Yellow
+                    Write-Host "  3. Click 'Apply & Restart'" -ForegroundColor Yellow
                 }
             } catch {
                 Write-Success "Docker is installed"
