@@ -13,19 +13,18 @@
 # Execution Policy: RemoteSigned or Unrestricted required
 #
 # Usage Examples:
-#   .\setup-strangeloop-optimized.ps1                               # Standard installation
+#   .\setup-strangeloop-optimized.ps1                               # Standard installation (visible WSL)
 #   .\setup-strangeloop-optimized.ps1 -Help                         # Show detailed help
-#   .\setup-strangeloop-optimized.ps1 -ShowWSLWindows               # Show WSL windows
-#   .\setup-strangeloop-optimized.ps1 -VerboseWSL -ShowWSLWindows   # Debug mode
+#   .\setup-strangeloop-optimized.ps1 -VerboseWSL                   # Extra debug information
 #   .\setup-strangeloop-optimized.ps1 -SkipPrerequisites            # Skip prerequisite checks
 #   .\setup-strangeloop-optimized.ps1 -UserName "John" -UserEmail "john@co.com"
 #
 # Parameters:
 #   -SkipPrerequisites     : Skip prerequisite installation checks
 #   -SkipDevelopmentTools  : Skip development tool setup
-#   -UserName              : Git user name (if not provided, will prompt)
-#   -UserEmail             : Git user email (if not provided, will prompt)
-#   -ShowWSLWindows        : Show WSL terminal windows (default: hidden)
+#   -UserName              : Git user name (collected during prerequisites if not provided)
+#   -UserEmail             : Git user email (collected during prerequisites if not provided)
+#   -ShowWSLWindows        : Control WSL terminal windows (default: visible, use to override)
 #   -VerboseWSL            : Enable verbose WSL session information
 
 param(
@@ -70,10 +69,12 @@ class WSLSessionConfig {
     [DateTime]$LastUsed
     [int]$CommandsExecuted
     [bool]$IsHealthy
+    [bool]$IsPersistent  # Marks session as persistent for reuse across different command types
     [System.Diagnostics.Process]$Process
     [System.IO.StreamWriter]$InputStream
     [System.IO.StreamReader]$OutputStream
     [System.IO.StreamReader]$ErrorStream
+    [System.Security.SecureString]$SudoPassword  # Pre-configured sudo password
     
     WSLSessionConfig([WSLSessionType]$sessionType) {
         $this.Id = [System.Guid]::NewGuid().ToString('N')[0..7] -join ''
@@ -82,6 +83,7 @@ class WSLSessionConfig {
         $this.CreatedTime = Get-Date
         $this.LastUsed = Get-Date
         $this.IsHealthy = $true
+        $this.IsPersistent = $true  # Default to persistent for efficiency
         $this.CommandsExecuted = 0
         
         switch ($sessionType) {
@@ -98,7 +100,17 @@ class WSLSessionConfig {
                 $this.MaxCommands = 20
             }
             'StrangeLoopCLI' {
-                $this.WorkingDirectory = '/home/user/projects'
+                # Get actual WSL user and use Linux home directory
+                $wslUser = try { 
+                    & wsl -- whoami 2>$null 
+                } catch { 
+                    $env:USERNAME.ToLower() 
+                }
+                
+                if (-not $wslUser) { $wslUser = $env:USERNAME.ToLower() }
+                
+                # Always use Linux-style paths for WSL
+                $this.WorkingDirectory = "/home/$wslUser/projects"
                 $this.RequiresSudo = $false
                 $this.Timeout = [TimeSpan]::FromMinutes(5)
                 $this.MaxCommands = 100
@@ -202,17 +214,21 @@ function Show-ScriptHelp {
    -SkipDevelopmentTools     Skip development tool setup
                              Use for minimal installation
    
-   -UserName "John Doe"      Git user name (avoids interactive prompt)
+   -UserName "John Doe"      Git user name (collected during prerequisites if not provided)
+                             • Defaults to existing Git configuration
+                             • Interactive prompt if no existing config
                              Example: -UserName "Jane Smith"
    
-   -UserEmail "user@co.com"  Git user email (avoids interactive prompt)
+   -UserEmail "user@co.com"  Git user email (collected during prerequisites if not provided)
+                             • Defaults to existing Git configuration
+                             • Interactive prompt if no existing config
                              Example: -UserEmail "jane@company.com"
 
    🖥️  WSL SESSION CONTROL:
-   -ShowWSLWindows           Show WSL terminal windows during execution
-                             • See real-time command execution
-                             • Great for debugging and transparency
-                             • Each session type gets its own window
+   -ShowWSLWindows           Control WSL terminal window visibility (visible by default)
+                             • WSL sessions are visible by default for transparency
+                             • Use this flag to explicitly control visibility
+                             • Great for debugging and monitoring progress
    
    -VerboseWSL               Enable detailed WSL session information
                              • Session IDs, process details
@@ -221,11 +237,11 @@ function Show-ScriptHelp {
 
 💡 USAGE EXAMPLES:
 
-   📦 Standard Installation:
+   📦 Standard Installation (with visible WSL windows):
    .\setup_strangeloop_old.ps1
 
-   🔍 Debug Mode (see what's happening):
-   .\setup_strangeloop_old.ps1 -ShowWSLWindows -VerboseWSL
+   🔍 Extra Debug Mode (detailed diagnostics):
+   .\setup_strangeloop_old.ps1 -VerboseWSL
 
    ⚡ Quick Setup (skip prompts):
    .\setup_strangeloop_old.ps1 -UserName "John Doe" -UserEmail "john@company.com"
@@ -329,8 +345,9 @@ $script:WSLConfig = @{
     CommandMarker = "STRANGELOOP_CMD_"
     CompletionMarker = "STRANGELOOP_COMPLETE_"
     ErrorMarker = "STRANGELOOP_ERROR_"
-    ShowWindows = $ShowWSLWindows
+    ShowWindows = if ($PSBoundParameters.ContainsKey('ShowWSLWindows')) { $ShowWSLWindows } else { $true }  # Default to visible
     VerboseMode = $VerboseWSL
+    SudoPassword = $null  # Will be set after password collection
 }
 
 # Global session management
@@ -338,6 +355,7 @@ $script:WSLSessions = @{}
 $script:WSLMetrics = [WSLPerformanceMetrics]::new()
 $script:LastShownDistribution = ""
 $script:SudoPassword = $null
+$script:PersistentWSLSession = $null  # Single persistent session for all WSL operations
 
 # Enterprise WSL Session Manager
 class WSLSessionManager {
@@ -357,6 +375,16 @@ class WSLSessionManager {
     }
     
     [WSLSessionConfig] GetOrCreateSession([WSLSessionType]$sessionType) {
+        # First, check for a persistent session that can handle all types
+        if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy -and $script:PersistentWSLSession.IsPersistent) {
+            $script:PersistentWSLSession.LastUsed = Get-Date
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  Using persistent WSL session [$($script:PersistentWSLSession.Id)]" -ForegroundColor DarkGray
+            }
+            return $script:PersistentWSLSession
+        }
+        
+        # Fall back to type-specific session lookup
         $existingSession = $this.Sessions.Values | Where-Object { 
             $_.Type -eq $sessionType -and $_.IsHealthy -and $_.CommandsExecuted -lt $_.MaxCommands 
         } | Select-Object -First 1
@@ -368,6 +396,15 @@ class WSLSessionManager {
         
         # Create new session
         $session = [WSLSessionConfig]::new($sessionType)
+        
+        # Configure sudo password if available
+        if ($script:WSLConfig.SudoPassword) {
+            $session.SudoPassword = $script:WSLConfig.SudoPassword
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  Configuring session with pre-authorized sudo access" -ForegroundColor DarkGray
+            }
+        }
+        
         $this.InitializeSession($session)
         $this.Sessions[$session.Id] = $session
         
@@ -377,37 +414,67 @@ class WSLSessionManager {
     
     [void] InitializeSession([WSLSessionConfig]$session) {
         try {
-            # Create WSL process with interactive shell
-            $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
-            $processInfo.FileName = "wsl.exe"
-            $processInfo.Arguments = "-d $($session.Distribution) -- bash --login"
-            $processInfo.UseShellExecute = $false
-            $processInfo.RedirectStandardInput = $true
-            $processInfo.RedirectStandardOutput = $true
-            $processInfo.RedirectStandardError = $true
-            
             # Configure window visibility based on user preference
             if ($script:WSLConfig.ShowWindows) {
-                $processInfo.CreateNoWindow = $false
-                $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+                # For visible windows, create a new terminal window
                 Write-Host "  Creating visible WSL window for session $($session.Id) [$($session.Type)]" -ForegroundColor DarkCyan
+                Write-Host "  Note: Visible mode opens new WSL terminal window" -ForegroundColor DarkGray
+                
+                # Create a title for the window
+                $windowTitle = "WSL-$($session.Type)-$($session.Id)"
+                
+                # Try to use Windows Terminal if available, otherwise fall back to regular cmd
+                $terminalFound = $false
+                if (Get-Command wt -ErrorAction SilentlyContinue) {
+                    try {
+                        $wtArgs = @("new-tab", "--title", $windowTitle, "wsl", "-d", $session.Distribution)
+                        $session.Process = Start-Process -FilePath "wt" -ArgumentList $wtArgs -PassThru
+                        $terminalFound = $true
+                        Write-Host "  Opened new Windows Terminal tab: $windowTitle" -ForegroundColor Green
+                    } catch {
+                        Write-Host "  Windows Terminal failed, trying alternative..." -ForegroundColor Yellow
+                    }
+                }
+                
+                if (-not $terminalFound) {
+                    # Fall back to cmd window
+                    $cmdArgs = @("/c", "start", $windowTitle, "wsl", "-d", $session.Distribution)
+                    $session.Process = Start-Process -FilePath "cmd" -ArgumentList $cmdArgs -PassThru
+                    Write-Host "  Opened new CMD window: $windowTitle" -ForegroundColor Green
+                }
+                
+                # For visible mode, we don't use stream redirection
+                $session.InputStream = $null
+                $session.OutputStream = $null
+                $session.ErrorStream = $null
+                
+                # Mark as ready - visible sessions don't need initialization commands
+                $session.IsHealthy = $true
+                
             } else {
+                # Hidden mode with standard stream redirection
+                $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+                $processInfo.FileName = "wsl.exe"
+                $processInfo.Arguments = "-d $($session.Distribution) -- bash --login"
+                $processInfo.UseShellExecute = $false
+                $processInfo.RedirectStandardInput = $true
+                $processInfo.RedirectStandardOutput = $true
+                $processInfo.RedirectStandardError = $true
                 $processInfo.CreateNoWindow = $true
                 $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+                
                 if ($script:WSLConfig.VerboseMode) {
                     Write-Host "  Creating hidden WSL session $($session.Id) [$($session.Type)]" -ForegroundColor DarkGray
                 }
+                
+                $session.Process = [System.Diagnostics.Process]::Start($processInfo)
+                $session.InputStream = $session.Process.StandardInput
+                $session.OutputStream = $session.Process.StandardOutput
+                $session.ErrorStream = $session.Process.StandardError
+                
+                # Initialize hidden session with commands
+                $this.ExecuteInitializationCommands($session)
             }
-            
-            $session.Process = [System.Diagnostics.Process]::Start($processInfo)
-            $session.InputStream = $session.Process.StandardInput
-            $session.OutputStream = $session.Process.StandardOutput
-            $session.ErrorStream = $session.Process.StandardError
-            
-            # Set up environment
-            $this.ExecuteInitializationCommands($session)
-            
-            $session.IsHealthy = $true
             
             if ($script:WSLConfig.VerboseMode -or $script:WSLConfig.ShowWindows) {
                 Write-Verbose "WSL session $($session.Id) initialized successfully"
@@ -415,8 +482,9 @@ class WSLSessionManager {
                 Write-Host "    • Type: $($session.Type)" -ForegroundColor DarkGray
                 Write-Host "    • Distribution: $($session.Distribution)" -ForegroundColor DarkGray
                 Write-Host "    • Working Directory: $($session.WorkingDirectory)" -ForegroundColor DarkGray
-                Write-Host "    • Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible' } else { 'Hidden' })" -ForegroundColor DarkGray
+                Write-Host "    • Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible (New Terminal)' } else { 'Hidden' })" -ForegroundColor DarkGray
                 Write-Host "    • Process ID: $($session.Process.Id)" -ForegroundColor DarkGray
+                Write-Host "    • Communication: $(if ($script:WSLConfig.ShowWindows) { 'Direct WSL commands' } else { 'Stream-based' })" -ForegroundColor DarkGray
             }
             
         } catch {
@@ -442,23 +510,43 @@ class WSLSessionManager {
                 $this.SendCommand($session, "export DEBIAN_FRONTEND=noninteractive")
             }
             'StrangeLoopCLI' {
-                # Ensure projects directory exists
-                $this.SendCommand($session, "mkdir -p /home/user/projects")
-                $this.SendCommand($session, "cd /home/user/projects")
+                # Ensure projects directory exists with Linux paths
+                $wslUser = try { 
+                    & wsl -- whoami 2>$null 
+                } catch { 
+                    $env:USERNAME.ToLower() 
+                }
+                
+                if (-not $wslUser) { $wslUser = $env:USERNAME.ToLower() }
+                
+                # Always use Linux-style paths for projects
+                $projectsDir = "/home/$wslUser/projects"
+                
+                $this.SendCommand($session, "mkdir -p '$projectsDir'")
+                $this.SendCommand($session, "cd '$projectsDir'")
             }
         }
     }
     
+
     [void] SendCommand([WSLSessionConfig]$session, [string]$command) {
-        if (-not $session.IsHealthy -or $session.Process.HasExited) {
-            throw "WSL session $($session.Id) is not healthy"
+        # Only used for hidden sessions with stream communication
+        if ($session.InputStream) {
+            if (-not $session.IsHealthy -or $session.Process.HasExited) {
+                throw "WSL session $($session.Id) is not healthy"
+            }
+            
+            $session.InputStream.WriteLine($command)
+            $session.InputStream.Flush()
         }
-        
-        $session.InputStream.WriteLine($command)
-        $session.InputStream.Flush()
     }
     
     [string] ReadOutput([WSLSessionConfig]$session, [TimeSpan]$timeout) {
+        # Only used for hidden sessions with stream communication
+        if (-not $session.OutputStream) {
+            return ""
+        }
+        
         $output = ""
         $startTime = Get-Date
         
@@ -475,31 +563,110 @@ class WSLSessionManager {
             Start-Sleep -Milliseconds 50
         }
         
-        return $output.Trim()
+        return $output
     }
     
+    [string] PrepareSudoCommand([WSLSessionConfig]$session, [string]$command) {
+        # Check if command starts with sudo and we have a password
+        if ($command.StartsWith("sudo ") -and $session.SudoPassword) {
+            # Convert secure string to plain text for sudo -S
+            $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($session.SudoPassword))
+            
+            # Remove 'sudo ' from the beginning and use echo password | sudo -S
+            $actualCommand = $command.Substring(5)  # Remove "sudo "
+            $preparedCommand = "echo '$plaintextPassword' | sudo -S $actualCommand"
+            
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  Using pre-configured sudo authentication" -ForegroundColor DarkGray
+            }
+            
+            return $preparedCommand
+        }
+        
+        return $command
+    }
+
     [WSLCommandResult] ExecuteCommand([WSLSessionConfig]$session, [string]$command, [string]$description) {
         $startTime = Get-Date
         $commandId = [System.Guid]::NewGuid().ToString('N')[0..7] -join ''
         
         try {
             Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $description..." -ForegroundColor Yellow
-            Write-Host "  Session: $($session.Id) | Type: $($session.Type)" -ForegroundColor DarkGray
+            Write-Host "  Session: $($session.Id) | Type: $($session.Type) | Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible' } else { 'Hidden' })" -ForegroundColor DarkGray
             
-            # Send command with unique marker
-            $markedCommand = "$command; echo '$($script:WSLConfig.CompletionMarker)$commandId'"
-            $this.SendCommand($session, $markedCommand)
+            # Prepare command with sudo authentication if needed
+            $preparedCommand = $this.PrepareSudoCommand($session, $command)
             
-            # Read output with timeout
-            $output = $this.ReadOutput($session, $session.Timeout)
+            $output = ""
+            $success = $false
+            
+            if ($script:WSLConfig.ShowWindows) {
+                # For visible sessions, execute command directly with proper output display
+                Write-Host "  Executing command in visible mode with real-time output..." -ForegroundColor DarkCyan
+                
+                if ($script:WSLConfig.VerboseMode) {
+                    Write-Host "  Command: $($command)" -ForegroundColor DarkGray
+                    Write-Host "  Prepared Command: $($preparedCommand)" -ForegroundColor DarkGray
+                    Write-Host "  Timeout: $($session.Timeout.TotalMinutes) minutes" -ForegroundColor DarkGray
+                }
+                
+                try {
+                    # Execute command directly using WSL with splatting for proper argument handling
+                    $wslArgs = @("-d", $session.Distribution, "--", "bash", "-c", $preparedCommand)
+                    
+                    Write-Host "  🔄 Executing: wsl -d $($session.Distribution) -- bash -c `"$preparedCommand`"" -ForegroundColor DarkGray
+                    
+                    # Execute with real-time output
+                    $result = & wsl @wslArgs 2>&1
+                    $success = $LASTEXITCODE -eq 0
+                    
+                    # Display output
+                    if ($result) {
+                        $output = $result -join "`n"
+                        if ($script:WSLConfig.VerboseMode) {
+                            Write-Host "  Command Output:" -ForegroundColor DarkGray
+                            Write-Host "  $($output.Substring(0, [Math]::Min(200, $output.Length)))" -ForegroundColor DarkGray
+                        }
+                    } else {
+                        $output = "Command executed successfully with no output"
+                    }
+                    
+                    if ($success) {
+                        Write-Host "  ✅ Command completed successfully" -ForegroundColor Green
+                    } else {
+                        Write-Host "  ❌ Command failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+                    }
+                    
+                } catch {
+                    $success = $false
+                    $output = "Error executing command: $($_.Exception.Message)"
+                    Write-Host "  💥 Execution error: $($_.Exception.Message)" -ForegroundColor Red
+                }
+                
+            } else {
+                # Hidden session with stream communication
+                if (-not $session.InputStream) {
+                    throw "Hidden session $($session.Id) does not have input stream available"
+                }
+                
+                # Send prepared command with unique marker
+                $markedCommand = "$preparedCommand; echo '$($script:WSLConfig.CompletionMarker)$commandId'"
+                $this.SendCommand($session, $markedCommand)
+                
+                # Read output with timeout
+                $output = $this.ReadOutput($session, $session.Timeout)
+                
+                # Check for completion marker
+                $success = $output -match "$($script:WSLConfig.CompletionMarker)$commandId"
+                
+                # Clean output (remove markers)
+                $output = $output -replace "$($script:WSLConfig.CompletionMarker)$commandId", "" -replace "READY>.*", ""
+            }
+            
             $duration = (Get-Date).Subtract($startTime)
             
-            # Check for completion marker
-            $success = $output -match "$($script:WSLConfig.CompletionMarker)$commandId"
+            # Determine result
             $result = if ($success) { [WSLCommandResult]::Success } else { [WSLCommandResult]::UnexpectedOutput }
-            
-            # Clean output (remove markers)
-            $cleanOutput = $output -replace "$($script:WSLConfig.CompletionMarker)$commandId", "" -replace "READY>.*", ""
             
             # Update session metrics
             $session.CommandsExecuted++
@@ -507,14 +674,19 @@ class WSLSessionManager {
             $this.Metrics.RecordCommand($command, $duration, $success)
             
             # Audit logging
-            $this.WriteAuditLog($session.Id, $command, $result, $duration, $cleanOutput, "")
+            $this.WriteAuditLog($session.Id, $command, $result, $duration, $output, "")
             
             if ($success) {
                 Write-Host "  ✓ Complete! (Duration: $($duration.TotalSeconds.ToString('F1'))s)" -ForegroundColor Green
+                if ($script:WSLConfig.VerboseMode -and $output.Trim()) {
+                    Write-Host "  Output: $($output.Trim().Split("`n")[0])" -ForegroundColor DarkGray
+                }
                 return [WSLCommandResult]::Success
             } else {
                 Write-Host "  ⚠ Command may not have completed properly" -ForegroundColor Yellow
-                Write-Host "  Output: $($cleanOutput.Split("`n")[0])" -ForegroundColor Yellow
+                if ($output.Trim()) {
+                    Write-Host "  Output: $($output.Trim().Split("`n")[0])" -ForegroundColor Yellow
+                }
                 return [WSLCommandResult]::UnexpectedOutput
             }
             
@@ -522,6 +694,11 @@ class WSLSessionManager {
             $duration = (Get-Date).Subtract($startTime)
             Write-Host "  ✗ Exception occurred (Duration: $($duration.TotalSeconds.ToString('F1'))s)" -ForegroundColor Red
             Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+            
+            # For visible sessions, provide helpful guidance
+            if ($script:WSLConfig.ShowWindows) {
+                Write-Host "  Note: You can see the command execution in the visible WSL window" -ForegroundColor Cyan
+            }
             
             $this.WriteAuditLog($session.Id, $command, [WSLCommandResult]::ParseError, $duration, "", $_.Exception.Message)
             return [WSLCommandResult]::ParseError
@@ -539,10 +716,14 @@ class WSLSessionManager {
             $session = $this.Sessions[$sessionId]
             
             try {
-                if ($session.Process -and -not $session.Process.HasExited) {
+                # Cleanup streams if they exist (hidden sessions)
+                if ($session.InputStream) {
                     $session.InputStream.WriteLine("exit")
                     $session.InputStream.Close()
-                    
+                }
+                
+                # Terminate process if still running
+                if ($session.Process -and -not $session.Process.HasExited) {
                     if (-not $session.Process.WaitForExit(5000)) {
                         $session.Process.Kill()
                     }
@@ -557,7 +738,9 @@ class WSLSessionManager {
     }
     
     [void] CleanupAllSessions() {
-        foreach ($sessionId in $this.Sessions.Keys) {
+        # Create a copy of the keys to avoid collection modification during enumeration
+        $sessionIds = @($this.Sessions.Keys)
+        foreach ($sessionId in $sessionIds) {
             $this.CleanupSession($sessionId)
         }
         Write-Host "All WSL sessions cleaned up" -ForegroundColor Green
@@ -624,14 +807,16 @@ function Show-EnterpriseWSLBanner {
     # Show usage tips
     if ($script:WSLConfig.ShowWindows) {
         Write-Host "`n💡 Window Mode Tips:" -ForegroundColor Cyan
-        Write-Host "   • You'll see WSL terminal windows for each session type" -ForegroundColor White
-        Write-Host "   • Each window shows real-time command execution" -ForegroundColor White
-        Write-Host "   • Don't close the WSL windows manually - they'll auto-cleanup" -ForegroundColor White
+        Write-Host "   • You'll see a single persistent WSL terminal window" -ForegroundColor White
+        Write-Host "   • All commands execute in the same session for efficiency" -ForegroundColor White
+        Write-Host "   • The window shows real-time command execution" -ForegroundColor White
+        Write-Host "   • Don't close the WSL window manually - it'll auto-cleanup" -ForegroundColor White
     } else {
         Write-Host "`n💡 Hidden Mode Tips:" -ForegroundColor Cyan
-        Write-Host "   • WSL sessions run in background for clean experience" -ForegroundColor White
+        Write-Host "   • Single persistent WSL session runs in background" -ForegroundColor White
+        Write-Host "   • All commands reuse the same session for better performance" -ForegroundColor White
         Write-Host "   • All output appears in this main script window" -ForegroundColor White
-        Write-Host "   • Use -ShowWSLWindows parameter to see WSL terminals" -ForegroundColor White
+        Write-Host "   • Use -ShowWSLWindows parameter to see the WSL terminal" -ForegroundColor White
     }
     
     Write-Host "`n🎯 Enterprise WSL management ready!" -ForegroundColor Green
@@ -892,7 +1077,18 @@ function Get-EnterpriseWSLOutput {
 function Invoke-WSLCommand {
     param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
     try {
-        # Use specified distribution or default Ubuntu
+        # Use persistent session if available, otherwise fall back to direct WSL execution
+        if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy) {
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  Using persistent WSL session [$($script:PersistentWSLSession.Id)]" -ForegroundColor DarkGray
+            }
+            
+            # Execute command through the persistent session
+            $result = $script:WSLManager.ExecuteCommand($script:PersistentWSLSession, $Command, $Description)
+            return $result.Success
+        }
+        
+        # Fall back to direct WSL execution (legacy mode)
         $distroParam = if ($Distribution) { "-d $Distribution" } else { "" }
         $targetDisplay = if ($Distribution) { $Distribution } else { 'Default WSL' }
         
@@ -990,31 +1186,98 @@ function Invoke-WSLCommand {
 function Invoke-WSLCommand {
     param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
     
-    # Map old distribution parameter to session type
-    $sessionType = [WSLSessionType]::GitOperations
-    if ($Command -match "sudo.*(apt|dpkg|snap)") {
-        $sessionType = [WSLSessionType]::PackageManagement
-    } elseif ($Command -match "strangeloop") {
-        $sessionType = [WSLSessionType]::StrangeLoopCLI
-    } elseif ($Command -match "sudo") {
-        $sessionType = [WSLSessionType]::SystemConfiguration
+    # Use the persistent session if available, otherwise fall back to session type mapping
+    if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy -and $script:PersistentWSLSession.IsPersistent) {
+        # Use the persistent session for all commands
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Host "  Using persistent WSL session [$($script:PersistentWSLSession.Id)] for command: $Command" -ForegroundColor DarkGray
+        }
+        return $script:WSLManager.ExecuteCommand($script:PersistentWSLSession, $Command, $Description)
+    } else {
+        # Fallback to session type mapping if no persistent session is available
+        $sessionType = [WSLSessionType]::GitOperations
+        if ($Command -match "sudo.*(apt|dpkg|snap)") {
+            $sessionType = [WSLSessionType]::PackageManagement
+        } elseif ($Command -match "strangeloop") {
+            $sessionType = [WSLSessionType]::StrangeLoopCLI
+        } elseif ($Command -match "sudo") {
+            $sessionType = [WSLSessionType]::SystemConfiguration
+        }
+        
+        return Invoke-EnterpriseWSLCommand -Command $Command -Description $Description -SessionType $sessionType -SudoPassword $SudoPassword
     }
-    
-    return Invoke-EnterpriseWSLCommand -Command $Command -Description $Description -SessionType $sessionType -SudoPassword $SudoPassword
 }
 
 function Get-WSLCommandOutput {
     param([string]$Command, [string]$Distribution = "")
     
-    # Map to appropriate session type
-    $sessionType = [WSLSessionType]::GitOperations
-    if ($Command -match "apt|dpkg|snap") {
-        $sessionType = [WSLSessionType]::PackageManagement
-    } elseif ($Command -match "strangeloop") {
-        $sessionType = [WSLSessionType]::StrangeLoopCLI
+    # Use the persistent session if available for consistency, but always use direct WSL execution
+    if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy -and $script:PersistentWSLSession.IsPersistent) {
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Using persistent WSL session [$($script:PersistentWSLSession.Id)] with direct execution"
+        }
+        
+        # Use the distribution from the persistent session if not specified
+        $targetDistribution = if ($Distribution) { $Distribution } else { $script:PersistentWSLSession.Distribution }
+    } else {
+        # Fallback to specified distribution or default
+        $targetDistribution = if ($Distribution) { $Distribution } else { "Ubuntu-24.04" }
+        
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: No persistent session available, using direct execution with distribution: $targetDistribution"
+        }
     }
     
-    return Get-EnterpriseWSLOutput -Command $Command -SessionType $sessionType
+    try {
+        # Always use direct WSL execution - this is reliable and works consistently
+        $distroParam = if ($targetDistribution) { "-d $targetDistribution" } else { "" }
+        $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
+        
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Executing direct WSL command: $wslCommand"
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Original command: $Command"
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Target distribution: $targetDistribution"
+        }
+        
+        # Execute the command directly
+        $result = Invoke-Expression $wslCommand 2>&1
+        
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Raw result type: $($result.GetType().Name)"
+            if ($result -is [array]) {
+                Write-Verbose "Get-WSLCommandOutput DEBUG: Raw result array length: $($result.Length)"
+            }
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Exit code: $LASTEXITCODE"
+        }
+        
+        # Handle array results from WSL
+        $output = if ($result -is [array]) {
+            $result -join "`n"
+        } else {
+            $result
+        }
+        
+        # Convert to string if it's not already
+        $output = $output.ToString().Trim()
+        
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Final output length: $($output.Length)"
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Final output content: '$output'"
+            
+            if ([string]::IsNullOrEmpty($output)) {
+                Write-Verbose "Get-WSLCommandOutput DEBUG: Output is empty - command may have produced no output or failed"
+            }
+        }
+        
+        return $output
+        
+    } catch {
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Verbose "Get-WSLCommandOutput DEBUG: Exception occurred: $($_.Exception.Message)"
+        }
+        Write-Verbose "Error getting WSL output from direct execution: $($_.Exception.Message)"
+        return $null
+    }
 }
 
 # Enterprise WSL Utility Functions
@@ -1220,25 +1483,33 @@ function Get-SudoPassword {
     
     Write-Info "Checking sudo access for WSL operations..."
     
-    # First check if sudo is passwordless
-    $sudoCheck = Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $Distribution
+    # First check if sudo is passwordless using direct WSL call (before creating sessions)
+    $sudoCheck = & wsl -d $Distribution -- bash -c "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'"
     
     if ($sudoCheck -eq "NOPASSWD") {
         Write-Success "Passwordless sudo is configured"
         return $null
     } else {
+        # Always collect sudo password upfront for better UX
         Write-Info "Sudo password is required for package management operations."
+        
+        if ($script:WSLConfig.ShowWindows) {
+            Write-Host "💡 " -NoNewline -ForegroundColor Yellow
+            Write-Host "Collecting sudo password upfront for seamless WSL session experience." -ForegroundColor Cyan
+            Write-Host "   This will be used to pre-configure sudo access in WSL terminals." -ForegroundColor DarkGray
+        }
+        
         Write-Host "Please enter your WSL sudo password (input will be hidden):" -ForegroundColor Yellow
         
         # Securely read password
         $securePassword = Read-Host -AsSecureString
         $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword))
         
-        # Test the password
-        $testResult = Get-WSLCommandOutput "echo '$plaintextPassword' | sudo -S true 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'" $Distribution
+        # Test the password using direct WSL call (before creating sessions)
+        $testResult = & wsl -d $Distribution -- bash -c "echo '$plaintextPassword' | sudo -S true 2>/dev/null && echo 'SUCCESS' || echo 'FAILED'"
         
         if ($testResult -eq "SUCCESS") {
-            Write-Success "Sudo password verified"
+            Write-Success "Sudo password verified and will be used for WSL session setup"
             return $securePassword
         } else {
             Write-Error "Invalid sudo password. Please check your password and try again."
@@ -1852,6 +2123,76 @@ Invoke-CommandWithDuration -Description "Checking StrangeLoop installation" -Scr
     }
 }
 
+# Step 1.5: Git Configuration Collection (Always Run)
+Write-Info "Collecting Git configuration..."
+
+# Function to get current Git configuration
+function Get-CurrentGitConfig {
+    try {
+        $currentName = git config --global user.name 2>$null
+        $currentEmail = git config --global user.email 2>$null
+        return @{
+            Name = $currentName
+            Email = $currentEmail
+        }
+    } catch {
+        return @{
+            Name = $null
+            Email = $null
+        }
+    }
+}
+
+$currentGitConfig = Get-CurrentGitConfig
+
+# Always collect Git user name (prompt user, offer existing as default)
+if (-not $UserName) {
+    if ($currentGitConfig.Name) {
+        Write-Host "  Current Git user name: $($currentGitConfig.Name)" -ForegroundColor Gray
+        $UserName = Get-UserInput "Enter your full name for Git commits" -DefaultValue $currentGitConfig.Name -Required $true
+        Write-Success "Git user name set to: $UserName"
+    } else {
+        $UserName = Get-UserInput "Enter your full name for Git commits" -Required $true
+        Write-Success "Git user name set to: $UserName"
+    }
+} else {
+    # Even if UserName was provided via parameter, show it and allow user to change it
+    Write-Host "  Provided Git user name: $UserName" -ForegroundColor Gray
+    $confirmUserName = Get-UserInput "Enter your full name for Git commits" -DefaultValue $UserName -Required $true
+    $UserName = $confirmUserName
+    Write-Success "Git user name confirmed: $UserName"
+}
+
+# Always collect Git user email (prompt user, offer existing as default)
+if (-not $UserEmail) {
+    if ($currentGitConfig.Email) {
+        Write-Host "  Current Git user email: $($currentGitConfig.Email)" -ForegroundColor Gray
+        $UserEmail = Get-UserInput "Enter your email address for Git commits" -DefaultValue $currentGitConfig.Email -Required $true
+        Write-Success "Git user email set to: $UserEmail"
+    } else {
+        $UserEmail = Get-UserInput "Enter your email address for Git commits" -Required $true
+        Write-Success "Git user email set to: $UserEmail"
+    }
+} else {
+    # Even if UserEmail was provided via parameter, show it and allow user to change it
+    Write-Host "  Provided Git user email: $UserEmail" -ForegroundColor Gray
+    $confirmUserEmail = Get-UserInput "Enter your email address for Git commits" -DefaultValue $UserEmail -Required $true
+    $UserEmail = $confirmUserEmail
+    Write-Success "Git user email confirmed: $UserEmail"
+}
+
+# Configure Git globally on Windows (this will be used for both Windows and WSL)
+Write-Info "Configuring Git on Windows with collected credentials..."
+try {
+    git config --global user.name "$UserName" 2>$null
+    git config --global user.email "$UserEmail" 2>$null
+    Write-Success "Git configured globally on Windows"
+    Write-Host "  Name: $UserName" -ForegroundColor Gray
+    Write-Host "  Email: $UserEmail" -ForegroundColor Gray
+} catch {
+    Write-Warning "Failed to configure Git on Windows: $($_.Exception.Message)"
+}
+
 # Step 2.5: Get Available Loops and Determine Environment Requirements
 Write-Step "Loop Analysis & Environment Requirements"
 
@@ -1880,8 +2221,8 @@ try {
 }
 
 # Categorize loops by platform requirements (based on actual loop configurations)
-$linuxRequiredLoops = @("flask-linux", "python-mcp-server", "python-cli", "python-semantic-kernel-agent", "langgraph-agent", "csharp-mcp-server", "csharp-semantic-kernel-agent", "dotnet-aspire")
-$windowsCompatibleLoops = @("flask-windows", "ads-snr-basic", "asp-dotnet-framework-api")
+$linuxRequiredLoops = @("flask-linux", "python-mcp-server", "dotnet-aspire", "csharp-mcp-server", "csharp-semantic-kernel-agent", "python-semantic-kernel-agent", "langgraph-agent", "python-cli")
+$windowsCompatibleLoops = @("asp-dotnet-framework-api", "ads-snr-basic", "flask-windows")
 
 $needsLinux = $false
 if (-not $SkipDevelopmentTools) {
@@ -2060,19 +2401,38 @@ if (-not $SkipDevelopmentTools) {
         
         # Get sudo password upfront for package management operations
         $sudoPassword = Get-SudoPassword $ubuntuDistro
-        if ($null -eq $sudoPassword -and (Get-WSLCommandOutput "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'" $ubuntuDistro) -ne "NOPASSWD") {
-            Write-Error "Cannot proceed without valid sudo credentials."
-            exit 1
+        if ($null -eq $sudoPassword) {
+            # Double-check if sudo is truly passwordless with direct WSL call
+            $sudoRecheck = & wsl -d $ubuntuDistro -- bash -c "sudo -n true 2>/dev/null && echo 'NOPASSWD' || echo 'PASSWD_REQUIRED'"
+            if ($sudoRecheck -ne "NOPASSWD") {
+                Write-Error "Cannot proceed without valid sudo credentials."
+                exit 1
+            }
         }
+        
+        # Store sudo password in WSL configuration for session use
+        $script:WSLConfig.SudoPassword = $sudoPassword
+        if ($sudoPassword) {
+            Write-Host "✓ " -NoNewline -ForegroundColor Green
+            Write-Host "Sudo credentials configured for WSL session management" -ForegroundColor Cyan
+        }
+        
+        # Create a single persistent WSL session for all subsequent operations
+        Write-Info "Creating persistent WSL session for development setup..."
+        $script:PersistentWSLSession = $script:WSLManager.GetOrCreateSession([WSLSessionType]::PackageManagement)
+        
+        if ($script:WSLConfig.VerboseMode) {
+            Write-Host "  ✓ Persistent WSL session [$($script:PersistentWSLSession.Id)] ready for all operations" -ForegroundColor DarkGreen
+            Write-Host "  This session will be reused for package management, Git operations, and project setup" -ForegroundColor DarkGray
+        }
+        
+        # Mark this session as the persistent one for all subsequent operations
+        $script:PersistentWSLSession.IsPersistent = $true
         
         # Check and update packages intelligently
         Write-Info "Updating package lists..."
         
-        if ($null -eq $sudoPassword) {
-            $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
-        } else {
-            $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro $sudoPassword
-        }
+        $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
         
         if (-not $updateResult) {
             Write-Warning "Package update may have failed. Continuing with setup..."
@@ -2108,21 +2468,13 @@ if (-not $SkipDevelopmentTools) {
                 $upgradeChoice = Get-UserInput "`nProceed with system package upgrades? (y/n)" "n"
                 if ($upgradeChoice -match '^[Yy]') {
                     Write-Info "Proceeding with package upgrades..."
-                    if ($null -eq $sudoPassword) {
-                        Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
-                    } else {
-                        Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro $sudoPassword
-                    }
+                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
                 } else {
                     Write-Success "Skipping package upgrades to preserve current versions"
                 }
             } else {
                 # No critical packages, safe to upgrade
-                if ($null -eq $sudoPassword) {
-                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
-                } else {
-                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro $sudoPassword
-                }
+                Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
             }
         } else {
             Write-Success "System packages are up to date"
@@ -2146,11 +2498,7 @@ if (-not $SkipDevelopmentTools) {
                 $pythonUpgradeChoice = Get-UserInput "`nUpgrade Python to latest version? (y/n)" "n"
                 if ($pythonUpgradeChoice -match '^[Yy]') {
                     Write-Info "Installing latest Python version..."
-                    if ($null -eq $sudoPassword) {
-                        Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
-                    } else {
-                        Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro $sudoPassword
-                    }
+                    Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
                 } else {
                     Write-Success "Keeping current Python version: $pythonVersion"
                     Write-Info "Note: Some StrangeLoop templates may require Python 3.9+"
@@ -2158,11 +2506,7 @@ if (-not $SkipDevelopmentTools) {
             }
         } else {
             Write-Info "Python3 not found, installing..."
-            if ($null -eq $sudoPassword) {
-                Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
-            } else {
-                Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro $sudoPassword
-            }
+            Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
         }
         
         # Check pipx installation
@@ -2171,11 +2515,7 @@ if (-not $SkipDevelopmentTools) {
             Write-Success "pipx is already installed (version: $pipxVersion)"
         } else {
             Write-Info "Installing pipx..."
-            if ($null -eq $sudoPassword) {
-                Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro
-            } else {
-                Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro $sudoPassword
-            }
+            Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro
             Invoke-WSLCommand "pipx ensurepath" "Configuring pipx PATH" $ubuntuDistro
         }
         
@@ -2195,45 +2535,27 @@ if (-not $SkipDevelopmentTools) {
             Invoke-WSLCommand "~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
         }
         
-        # Git configuration
-        Write-Info "Configuring Git in WSL..."
+        # Git configuration in WSL (Always Overwrite)
+        Write-Info "Configuring Git in WSL (always overwrite for consistency)..."
+        Write-Host "  Setting Name: $UserName" -ForegroundColor Gray
+        Write-Host "  Setting Email: $UserEmail" -ForegroundColor Gray
         
-        # Check existing Git configuration
-        $existingName = Get-WSLCommandOutput "git config --global user.name 2>/dev/null" $ubuntuDistro
-        $existingEmail = Get-WSLCommandOutput "git config --global user.email 2>/dev/null" $ubuntuDistro
+        # Always execute Git configuration commands to overwrite any existing config
+        $gitNameResult = Invoke-WSLCommand "git config --global user.name `"$UserName`"" "Setting Git user name in WSL" $ubuntuDistro
+        $gitEmailResult = Invoke-WSLCommand "git config --global user.email `"$UserEmail`"" "Setting Git user email in WSL" $ubuntuDistro
         
-        if ($existingName -and $existingEmail) {
-            Write-Success "Git is already configured:"
-            Write-Host "  Name: $existingName" -ForegroundColor Gray
-            Write-Host "  Email: $existingEmail" -ForegroundColor Gray
+        # Verify the configuration was applied
+        $verifyName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
+        $verifyEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
+        
+        if ($verifyName -eq $UserName -and $verifyEmail -eq $UserEmail) {
+            Write-Success "Git configuration applied successfully in WSL:"
+            Write-Host "  Name: $verifyName" -ForegroundColor Gray
+            Write-Host "  Email: $verifyEmail" -ForegroundColor Gray
         } else {
-            Write-Info "Setting up Git user configuration..."
-            if (-not $UserName) {
-                $UserName = Get-UserInput "Enter your full name for Git commits" -Required $true
-            }
-            if (-not $UserEmail) {
-                $UserEmail = Get-UserInput "Enter your email address for Git commits" -Required $true
-            }
-            
-            # Use Git configuration without quotes to avoid escaping issues
-            Write-Info "Configuring Git user name: $UserName"
-            $gitNameResult = Invoke-WSLCommand "git config --global user.name `"$UserName`"" "Setting Git user name" $ubuntuDistro
-            Write-Info "Configuring Git user email: $UserEmail"
-            $gitEmailResult = Invoke-WSLCommand "git config --global user.email `"$UserEmail`"" "Setting Git user email" $ubuntuDistro
-            
-            # Verify the configuration was set
-            $verifyName = Get-WSLCommandOutput "git config --global user.name" $ubuntuDistro
-            $verifyEmail = Get-WSLCommandOutput "git config --global user.email" $ubuntuDistro
-            
-            if ($verifyName -eq $UserName -and $verifyEmail -eq $UserEmail) {
-                Write-Success "Git user configuration verified successfully"
-                Write-Host "  Name: $verifyName" -ForegroundColor Gray
-                Write-Host "  Email: $verifyEmail" -ForegroundColor Gray
-            } else {
-                Write-Warning "Git configuration may not have been set correctly:"
-                Write-Host "  Expected Name: $UserName, Got: $verifyName" -ForegroundColor Yellow
-                Write-Host "  Expected Email: $UserEmail, Got: $verifyEmail" -ForegroundColor Yellow
-            }
+            Write-Warning "Git configuration verification had issues:"
+            Write-Host "  Expected Name: $UserName, Got: $verifyName" -ForegroundColor Yellow
+            Write-Host "  Expected Email: $UserEmail, Got: $verifyEmail" -ForegroundColor Yellow
         }
         
         # Configure Git line endings for cross-platform compatibility in WSL
@@ -2242,9 +2564,11 @@ if (-not $SkipDevelopmentTools) {
         Invoke-WSLCommand "git config --global core.eol lf" "Setting Git eol" $ubuntuDistro
         Write-Success "Git line endings configured in WSL (LF for Linux/Windows compatibility)"
         
-        # Check Git LFS installation
-        $gitLfsVersion = Get-WSLCommandOutput "git lfs version 2>/dev/null" $ubuntuDistro
-        if ($gitLfsVersion) {
+        # Check Git LFS installation with improved detection
+        Write-Info "Checking Git LFS installation in WSL..."
+        $gitLfsVersion = Get-WSLCommandOutput "which git-lfs >/dev/null 2>&1 && git lfs version 2>/dev/null | head -1 || echo 'NOT_FOUND'" $ubuntuDistro
+        
+        if ($gitLfsVersion -and $gitLfsVersion -ne "NOT_FOUND" -and $gitLfsVersion -match "git-lfs") {
             # Extract just the version number for cleaner display
             $versionMatch = $gitLfsVersion -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)"
             if ($versionMatch) {
@@ -2252,8 +2576,89 @@ if (-not $SkipDevelopmentTools) {
             } else {
                 Write-Success "Git LFS is already installed ($gitLfsVersion)"
             }
+            # Configure Git LFS since it's already installed
+            Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
+            $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
+            if ($configResult) {
+                Write-Success "Git LFS configured successfully (hooks updated)"
+            } else {
+                # Try manual hook resolution if force flag fails
+                Write-Warning "Force configuration failed, trying manual hook resolution..."
+                $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
+                if ($manualResult) {
+                    Write-Success "Git LFS hooks updated successfully"
+                } else {
+                    Write-Warning "Git LFS configuration may have issues - continuing anyway"
+                }
+            }
         } else {
-            Invoke-WSLCommand "git lfs install" "Configuring Git LFS" $ubuntuDistro
+            # Git LFS not found, install it first
+            Write-Info "Git LFS not found. Installing Git LFS in WSL..."
+            
+            # Update package list first to ensure we have latest package information
+            $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package list" $ubuntuDistro
+            if ($updateResult) {
+                Write-Success "Package list updated"
+            } else {
+                Write-Warning "Package update failed, continuing with installation attempt..."
+            }
+            
+            # Install Git LFS
+            $lfsInstallResult = Invoke-WSLCommand "sudo apt install -y git-lfs" "Installing Git LFS package" $ubuntuDistro
+            if ($lfsInstallResult) {
+                Write-Success "Git LFS package installed"
+                
+                # Verify installation
+                Write-Info "Verifying Git LFS installation..."
+                $verifyInstall = Get-WSLCommandOutput "which git-lfs >/dev/null 2>&1 && git lfs version 2>/dev/null | head -1 || echo 'INSTALL_FAILED'" $ubuntuDistro
+                if ($verifyInstall -and $verifyInstall -ne "INSTALL_FAILED" -and $verifyInstall -match "git-lfs") {
+                    Write-Success "Git LFS installation verified: $verifyInstall"
+                    # Now configure it with hook conflict handling
+                    Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
+                    $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
+                    if ($configResult) {
+                        Write-Success "Git LFS configured successfully (hooks updated)"
+                    } else {
+                        # Try manual hook resolution if force flag fails
+                        Write-Warning "Force configuration failed, trying manual hook resolution..."
+                        $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
+                        if ($manualResult) {
+                            Write-Success "Git LFS hooks updated successfully"
+                        } else {
+                            Write-Warning "Git LFS configuration may have issues - continuing anyway"
+                        }
+                    }
+                } else {
+                    Write-Warning "Git LFS installation verification had issues, but trying configuration anyway..."
+                    # Try configuration regardless since the package was installed
+                    Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
+                    $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
+                    if ($configResult) {
+                        Write-Success "Git LFS configured successfully despite verification issues"
+                    } else {
+                        # Try manual hook resolution if force flag fails
+                        Write-Warning "Force configuration failed, trying manual hook resolution..."
+                        $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
+                        if ($manualResult) {
+                            Write-Success "Git LFS hooks updated successfully"
+                        } else {
+                            Write-Warning "Git LFS configuration failed. Manual configuration may be required."
+                            Write-Info "You can manually configure Git LFS with: wsl -- git lfs install --force"
+                        }
+                    }
+                }
+            } else {
+                Write-Warning "Git LFS installation failed. Attempting alternative installation..."
+                # Try alternative installation method using curl
+                $curlInstallResult = Invoke-WSLCommand "curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash && sudo apt install -y git-lfs" "Installing Git LFS via curl" $ubuntuDistro
+                if ($curlInstallResult) {
+                    Write-Success "Git LFS installed via alternative method"
+                    Invoke-WSLCommand "git lfs install" "Configuring Git LFS" $ubuntuDistro
+                } else {
+                    Write-Error "All Git LFS installation methods failed. Please install manually:"
+                    Write-Info "Manual installation: wsl -- sudo apt update && sudo apt install -y git-lfs && git lfs install"
+                }
+            }
         }
         
         # Clear sudo password from memory for security
@@ -2561,11 +2966,38 @@ try {
     $appName = Get-UserInput "Application name" $defaultAppName
     
     if ($needsLinux) {
-        # WSL development - use Linux file system
+        # WSL development - use appropriate file system path
+        Write-Info "Getting WSL username and home directory for project setup..."
         $wslUser = Get-WSLCommandOutput "whoami" $ubuntuDistro
-        if (-not $wslUser) { $wslUser = "user" }  # fallback if whoami fails
-        $defaultAppDir = "/home/$wslUser/projects/$appName"
+        $wslHome = Get-WSLCommandOutput "echo \$HOME" $ubuntuDistro
+        
+        if (-not $wslUser -or $wslUser.Trim() -eq "") { 
+            # Fallback to Windows username if WSL whoami fails
+            $wslUser = $env:USERNAME.ToLower()
+            Write-Warning "Could not get WSL username, using Windows username: $wslUser"
+        } else {
+            $wslUser = $wslUser.Trim()
+            Write-Success "WSL username detected: $wslUser"
+        }
+        
+        # Use Linux-style home directory for WSL projects
+        if ($wslHome -and $wslHome.StartsWith("/home/")) {
+            # Traditional Linux home directory (preferred for WSL)
+            $defaultAppDir = "$wslHome/projects/$appName"
+            Write-Info "Using WSL Linux home directory"
+        } elseif ($wslHome -and ($wslHome.StartsWith("/mnt/c") -or $wslHome.StartsWith("C:"))) {
+            # WSL is mapped to Windows file system (fallback)
+            $defaultAppDir = "/home/$wslUser/projects/$appName"
+            Write-Info "WSL detected Windows file system, using Linux path instead"
+        } else {
+            # Fallback to standard Linux path
+            $defaultAppDir = "/home/$wslUser/projects/$appName"
+            Write-Info "Using standard Linux home directory path"
+        }
+        
         Write-Info "Using WSL environment for project initialization"
+        Write-Host "  WSL Home: $wslHome" -ForegroundColor Gray
+        Write-Host "  Projects will be created in: $(Split-Path $defaultAppDir -Parent)" -ForegroundColor Gray
         $appDir = Get-UserInput "Application directory (WSL path)" $defaultAppDir
         
         # Create directory in WSL
@@ -2578,29 +3010,27 @@ try {
             
             # Check if it's already a StrangeLoop project
             $isStrangeLoopProject = Get-WSLCommandOutput "cd '$appDir' && if [ -d './strangeloop' ]; then echo 'YES'; else echo 'NO'; fi" $ubuntuDistro
+            
+            # Always ask for confirmation before cleaning, regardless of project type
             if ($isStrangeLoopProject -eq "YES") {
                 Write-Warning "Directory appears to be an existing StrangeLoop project"
-                $overwriteChoice = Get-UserInput "Do you want to reinitialize this project? This will overwrite existing configuration (y/n)" "n"
-                if ($overwriteChoice -notmatch '^[Yy]') {
-                    Write-Info "Skipping initialization. Using existing project directory."
-                    $strangeloopDir = "SUCCESS"  # Skip initialization but continue with settings update
-                } else {
-                    Write-Info "Cleaning existing project and reinitializing..."
-                    $cleanResult = Invoke-WSLCommand "cd '$appDir' && rm -rf ./* ./.*[^.] 2>/dev/null || true" "Cleaning existing project" $ubuntuDistro
-                    $createDirResult = $true  # Directory already exists, just cleaned
-                }
+                $confirmMessage = "Do you want to clean and reinitialize this StrangeLoop project with the new loop ($($selectedLoop.Name))? This will remove all existing files (y/n)"
             } else {
                 # Directory exists but not a StrangeLoop project
                 $hasFiles = Get-WSLCommandOutput "cd '$appDir' && find . -maxdepth 1 -type f | wc -l" $ubuntuDistro
-                if ($hasFiles -and [int]$hasFiles -gt 0) {
-                    Write-Warning "Directory contains $hasFiles files"
-                    $overwriteChoice = Get-UserInput "Directory is not empty. Continue anyway? (y/n)" "n"
-                    if ($overwriteChoice -notmatch '^[Yy]') {
-                        Write-Error "Cannot initialize in non-empty directory. Please choose a different path or clean the directory manually."
-                        exit 1
-                    }
-                }
-                $createDirResult = $true  # Directory exists and user confirmed
+                $fileCountMsg = if ($hasFiles -and [int]$hasFiles -gt 0) { " (contains $hasFiles files)" } else { "" }
+                Write-Warning "Directory is not a StrangeLoop project$fileCountMsg"
+                $confirmMessage = "Do you want to clean this directory and initialize a new StrangeLoop project ($($selectedLoop.Name))? This will remove all existing files (y/n)"
+            }
+            
+            $overwriteChoice = Get-UserInput $confirmMessage "n"
+            if ($overwriteChoice -notmatch '^[Yy]') {
+                Write-Error "Cannot proceed without cleaning the directory. Please choose a different path or clean the directory manually."
+                exit 1
+            } else {
+                Write-Info "Cleaning directory and preparing for new loop initialization..."
+                $cleanResult = Invoke-WSLCommand "cd '$appDir' && rm -rf ./* ./.*[^.] 2>/dev/null || true" "Cleaning existing directory" $ubuntuDistro
+                $createDirResult = $true  # Directory already exists, just cleaned
             }
         } else {
             $createDirResult = Invoke-WSLCommand "mkdir -p '$appDir'" "Creating project directory" $ubuntuDistro
@@ -2613,56 +3043,134 @@ try {
             exit 1
         }
         
-        # Initialize loop in WSL (only if not already a StrangeLoop project)
-        if (-not (Get-Variable -Name "strangeloopDir" -ErrorAction SilentlyContinue) -or $strangeloopDir -ne "SUCCESS") {
-            Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
-            $initResult = Invoke-WSLCommand "cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)" "Initializing StrangeLoop project" $ubuntuDistro
-            
-            # Check if initialization was actually successful by verifying created files
-            $strangeloopDir = Get-WSLCommandOutput "cd '$appDir' && if [ -d './strangeloop' ]; then echo 'SUCCESS'; else echo 'FAILED'; fi" $ubuntuDistro
-        } else {
-            Write-Info "Using existing StrangeLoop project directory"
-        }
+        # Initialize the new StrangeLoop project (directory has been cleaned if it existed)
+        Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
         
-        if ($strangeloopDir -eq "SUCCESS") {
-            Write-Success "Loop initialized successfully in WSL!"
+        # Use direct WSL command for initialization
+        Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Initializing StrangeLoop project..." -ForegroundColor Yellow
+        $initCommand = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)`""
+        Write-Verbose "Direct WSL command: $initCommand"
+        
+        try {
+            $initResult = Invoke-Expression $initCommand 2>&1
+            $initSuccess = $LASTEXITCODE -eq 0
             
-            # Show created files
-            Write-Info "Files created in WSL:"
-            $filesList = Get-WSLCommandOutput "cd '$appDir' && ls -la" $ubuntuDistro
-            if ($filesList) {
-                $filesList -split "`n" | Where-Object { $_ -and $_ -notmatch "^total" } | ForEach-Object {
-                    $line = $_.Trim()
-                    if ($line -and $line -notmatch "^\.$" -and $line -notmatch "^\.\.$") {
-                        $fileName = ($line -split '\s+')[-1]
-                        Write-Host "  $fileName" -ForegroundColor Gray
-                    }
+            if ($initSuccess) {
+                Write-Host "  ✓ Complete! StrangeLoop project initialized" -ForegroundColor Green
+            } else {
+                Write-Host "  ✗ Failed! Exit code: $LASTEXITCODE" -ForegroundColor Red
+                if ($initResult) {
+                    Write-Host "  Error: $($initResult -join "`n")" -ForegroundColor Red
                 }
             }
+        } catch {
+            Write-Host "  ✗ Exception: $($_.Exception.Message)" -ForegroundColor Red
+            $initSuccess = $false
+        }
+        
+        # Check if initialization was successful
+        $strangeloopDir = Get-WSLCommandOutput "cd '$appDir' && if [ -d './strangeloop' ]; then echo 'SUCCESS'; else echo 'FAILED'; fi" $ubuntuDistro
+        
+        if ($strangeloopDir -ne "SUCCESS" -or -not $initSuccess) {
+            Write-Error "Loop initialization failed in WSL - strangeloop directory not created"
+            Write-Info "Please check the error messages above and try manual initialization:"
+            Write-Info "  Manual command: wsl -d $ubuntuDistro -- bash -c \"cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)\""
+            exit 1
+        } else {
+            Write-Success "Loop initialized successfully in WSL!"
+        }
+        
+        # Show project files
+        Write-Info "Project structure in WSL:"
+        $filesList = Get-WSLCommandOutput "cd '$appDir' && ls -la" $ubuntuDistro
+        if ($filesList) {
+            $filesList -split "`n" | Where-Object { $_ -and $_ -notmatch "^total" } | ForEach-Object {
+                $line = $_.Trim()
+                if ($line -and $line -notmatch "^\.$" -and $line -notmatch "^\.\.$") {
+                    $fileName = ($line -split '\s+')[-1]
+                    Write-Host "  $fileName" -ForegroundColor Gray
+                }
+            }
+        }
             
             # Update settings.yaml with project name in WSL
             Write-Info "Updating settings.yaml with project name in WSL..."
-            $updateSettingsResult = Invoke-WSLCommand "cd '$appDir' && if [ -f './strangeloop/settings.yaml' ]; then sed -i 's/^name:.*/name: $appName/' './strangeloop/settings.yaml' && echo 'Settings updated'; else echo 'Settings file not found'; fi" "Updating project settings" $ubuntuDistro
-            if ($updateSettingsResult) {
+            
+            # Use direct WSL command for settings update
+            Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Updating project settings..." -ForegroundColor Yellow
+            $settingsCommand = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && if [ -f './strangeloop/settings.yaml' ]; then sed -i 's/^name:.*/name: $appName/' './strangeloop/settings.yaml' && echo 'Settings updated'; else echo 'Settings file not found'; fi`""
+            Write-Verbose "Direct WSL command: $settingsCommand"
+            
+            try {
+                $updateSettingsResult = Invoke-Expression $settingsCommand 2>&1
+                $settingsSuccess = $LASTEXITCODE -eq 0
+                
+                if ($settingsSuccess) {
+                    Write-Host "  ✓ Complete! Project settings updated" -ForegroundColor Green
+                } else {
+                    Write-Host "  ✗ Failed! Exit code: $LASTEXITCODE" -ForegroundColor Red
+                    if ($updateSettingsResult) {
+                        Write-Host "  Error: $($updateSettingsResult -join "`n")" -ForegroundColor Red
+                    }
+                }
+            } catch {
+                Write-Host "  ✗ Exception: $($_.Exception.Message)" -ForegroundColor Red
+                $settingsSuccess = $false
+            }
+            
+            if ($settingsSuccess) {
                 $settingsCheck = Get-WSLCommandOutput "cd '$appDir' && if [ -f './strangeloop/settings.yaml' ]; then echo 'SUCCESS'; else echo 'NOT_FOUND'; fi" $ubuntuDistro
                 if ($settingsCheck -eq "SUCCESS") {
                     Write-Success "Settings.yaml updated with project name: $appName"
                     
                     # Run strangeloop recurse to apply settings changes
                     Write-Info "Running strangeloop recurse to apply configuration changes..."
-                    $recurseResult = Invoke-WSLCommand "cd '$appDir' && strangeloop recurse" "Applying configuration changes" $ubuntuDistro
-                    if ($recurseResult) {
-                        Write-Success "Configuration applied successfully with strangeloop recurse"
+                    
+                    # Use direct WSL command for recurse
+                    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Applying configuration changes..." -ForegroundColor Yellow
+                    $recurseCommand = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && strangeloop recurse`""
+                    Write-Verbose "Direct WSL command: $recurseCommand"
+                    
+                    try {
+                        $recurseResult = Invoke-Expression $recurseCommand 2>&1
+                        $recurseSuccess = $LASTEXITCODE -eq 0
                         
-                        # Open project in VS Code (WSL context)
-                        Write-Info "Opening project in VS Code..."
-                        $codeResult = Invoke-WSLCommand "cd '$appDir' && code ." "Opening VS Code" $ubuntuDistro
-                        if ($codeResult) {
-                            Write-Success "Project opened in VS Code (WSL context)"
+                        if ($recurseSuccess) {
+                            Write-Host "  ✓ Complete! Configuration applied successfully" -ForegroundColor Green
+                            Write-Success "Configuration applied successfully with strangeloop recurse"
+                            
+                            # Open project in VS Code (WSL context)
+                            Write-Info "Opening project in VS Code..."
+                            
+                            # Use direct WSL command for VS Code
+                            Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Opening VS Code..." -ForegroundColor Yellow
+                            $codeCommand = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && code .`""
+                            Write-Verbose "Direct WSL command: $codeCommand"
+                            
+                            try {
+                                $codeResult = Invoke-Expression $codeCommand 2>&1
+                                $codeSuccess = $LASTEXITCODE -eq 0
+                                
+                                if ($codeSuccess) {
+                                    Write-Host "  ✓ Complete! VS Code opened" -ForegroundColor Green
+                                    Write-Success "Project opened in VS Code (WSL context)"
+                                } else {
+                                    Write-Host "  ✗ Failed! Exit code: $LASTEXITCODE" -ForegroundColor Red
+                                    Write-Warning "Could not open VS Code automatically. You can open it manually with: code '$appDir'"
+                                }
+                            } catch {
+                                Write-Host "  ✗ Exception: $($_.Exception.Message)" -ForegroundColor Red
+                                Write-Warning "Could not open VS Code automatically. You can open it manually with: code '$appDir'"
+                            }
                         } else {
-                            Write-Warning "Could not open VS Code automatically. You can open it manually with: code '$appDir'"
+                            Write-Host "  ✗ Failed! Exit code: $LASTEXITCODE" -ForegroundColor Red
+                            if ($recurseResult) {
+                                Write-Host "  Error: $($recurseResult -join "`n")" -ForegroundColor Red
+                            }
+                            Write-Warning "strangeloop recurse completed with warnings"
                         }
-                    } else {
+                    } catch {
+                        Write-Host "  ✗ Exception: $($_.Exception.Message)" -ForegroundColor Red
                         Write-Warning "strangeloop recurse completed with warnings"
                     }
                 } else {
@@ -2677,12 +3185,6 @@ try {
             Write-Host "  WSL: cd '$appDir'" -ForegroundColor Yellow
             Write-Host "  Windows: \\wsl.localhost\$ubuntuDistro$appDir" -ForegroundColor Yellow
             Write-Host "  VS Code: code '$appDir' (from WSL terminal)" -ForegroundColor Yellow
-        } else {
-            Write-Error "Loop initialization failed in WSL - strangeloop directory not created"
-            Write-Info "Please check the error messages above and try manual initialization:"
-            Write-Info "  wsl -d $ubuntuDistro -- bash -c \"cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)\""
-            exit 1
-        }
     } else {
         # Windows development - use Windows file system
         $defaultAppDir = "q:\src\$appName"
@@ -2698,56 +3200,49 @@ try {
             
             # Check if it's already a StrangeLoop project
             $strangeloopPath = Join-Path $appDir "strangeloop"
+            
+            # Always ask for confirmation before cleaning, regardless of project type
             if (Test-Path $strangeloopPath) {
                 Write-Warning "Directory appears to be an existing StrangeLoop project"
-                $overwriteChoice = Get-UserInput "Do you want to reinitialize this project? This will overwrite existing configuration (y/n)" "n"
-                if ($overwriteChoice -notmatch '^[Yy]') {
-                    Write-Info "Skipping initialization. Using existing project directory."
-                    $skipInitialization = $true
-                } else {
-                    Write-Info "Cleaning existing project and reinitializing..."
-                    Get-ChildItem -Path $appDir -Force | Remove-Item -Recurse -Force
-                    $skipInitialization = $false
-                }
+                $confirmMessage = "Do you want to clean and reinitialize this StrangeLoop project with the new loop ($($selectedLoop.Name))? This will remove all existing files (y/n)"
             } else {
                 # Directory exists but not a StrangeLoop project
                 $fileCount = (Get-ChildItem -Path $appDir -Force | Measure-Object).Count
-                if ($fileCount -gt 0) {
-                    Write-Warning "Directory contains $fileCount items"
-                    $overwriteChoice = Get-UserInput "Directory is not empty. Continue anyway? (y/n)" "n"
-                    if ($overwriteChoice -notmatch '^[Yy]') {
-                        Write-Error "Cannot initialize in non-empty directory. Please choose a different path or clean the directory manually."
-                        exit 1
-                    }
-                }
-                $skipInitialization = $false
+                $fileCountMsg = if ($fileCount -gt 0) { " (contains $fileCount items)" } else { "" }
+                Write-Warning "Directory is not a StrangeLoop project$fileCountMsg"
+                $confirmMessage = "Do you want to clean this directory and initialize a new StrangeLoop project ($($selectedLoop.Name))? This will remove all existing files (y/n)"
+            }
+            
+            $overwriteChoice = Get-UserInput $confirmMessage "n"
+            if ($overwriteChoice -notmatch '^[Yy]') {
+                Write-Error "Cannot proceed without cleaning the directory. Please choose a different path or clean the directory manually."
+                exit 1
+            } else {
+                Write-Info "Cleaning directory and preparing for new loop initialization..."
+                Get-ChildItem -Path $appDir -Force | Remove-Item -Recurse -Force
             }
         } else {
             New-Item -ItemType Directory -Path $appDir -Force | Out-Null
-            $skipInitialization = $false
         }
         
         Write-Success "Directory ready for initialization"
         
         Set-Location $appDir
         
-        if (-not $skipInitialization) {
-            Write-Info "Initializing $($selectedLoop.Name) loop in Windows environment..."
-            
-            try {
-                strangeloop init --loop $selectedLoop.Name
-                Write-Success "Loop initialized successfully!"
-            } catch {
-                Write-Warning "Loop initialization encountered issues: $($_.Exception.Message)"
-                # Check if strangeloop directory was created despite the error
-                if (-not (Test-Path ".\strangeloop")) {
-                    Write-Error "StrangeLoop initialization failed - no strangeloop directory created"
-                    exit 1
-                }
-                Write-Info "Continuing with setup despite initialization warnings..."
+        # Initialize the new StrangeLoop project (directory has been cleaned if it existed)
+        Write-Info "Initializing $($selectedLoop.Name) loop in Windows environment..."
+        
+        try {
+            strangeloop init --loop $selectedLoop.Name
+            Write-Success "Loop initialized successfully!"
+        } catch {
+            Write-Warning "Loop initialization encountered issues: $($_.Exception.Message)"
+            # Check if strangeloop directory was created despite the error
+            if (-not (Test-Path ".\strangeloop")) {
+                Write-Error "StrangeLoop initialization failed - no strangeloop directory created"
+                exit 1
             }
-        } else {
-            Write-Info "Using existing StrangeLoop project"
+            Write-Info "Continuing with setup despite initialization warnings..."
         }
         
         Write-Info "Files in project directory:"

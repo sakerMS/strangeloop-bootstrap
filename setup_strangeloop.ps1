@@ -1297,11 +1297,11 @@ if (Test-Command "strangeloop") {
 # Define environment requirements for different loops
 $linuxRequiredLoops = @(
     "flask-linux", "python-mcp-server", "dotnet-aspire", "csharp-mcp-server", 
-    "csharp-semantic-kernel-agent", "python-semantic-kernel-agent", "langgraph-agent"
+    "csharp-semantic-kernel-agent", "python-semantic-kernel-agent", "langgraph-agent", "python-cli"
 )
 
 $windowsCompatibleLoops = @(
-    "asp-dotnet-framework-api", "ads-snr-basic", "python-cli", "flask-windows"
+    "asp-dotnet-framework-api", "ads-snr-basic", "flask-windows"
 )
 
 #endregion
