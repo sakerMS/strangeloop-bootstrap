@@ -1995,6 +1995,16 @@ try {
 
             $defaultAppDir = if ($detectedWslUser) { "/home/$detectedWslUser/projects/$appName" } else { "/home/`$(whoami)/projects/$appName" }
             Write-Info "Using WSL environment for project initialization"
+            
+            # Clear StrangeLoop cache at the beginning of WSL flow for reliable operation
+            Write-Info "Clearing StrangeLoop cache for reliable operation..."
+            try {
+                wsl -- bash -c "strangeloop library-registry clear-cache"
+                Write-Info "Cache cleared successfully in WSL environment"
+            } catch {
+                Write-Warning "Cache clear failed in WSL, continuing anyway"
+            }
+            
             $appDir = Get-UserInput "Application directory (WSL path)" $defaultAppDir
             # Resolve any placeholders in the provided path
             $appDirResolved = Resolve-WSLPath -Path $appDir -Distribution $ubuntuDistro
@@ -2052,16 +2062,6 @@ try {
             if ($shouldInitialize) {
                 Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
                 
-                # Clear cache for reliable operation
-                Write-Info "Clearing StrangeLoop cache for reliable operation..."
-                $clearCacheCmd = "strangeloop library-registry clear-cache"
-                try {
-                    wsl -- bash -c $clearCacheCmd
-                    Write-Info "Cache cleared successfully"
-                } catch {
-                    Write-Warning "Cache clear failed, continuing anyway"
-                }
-                
                 $initCommand = "cd '$appDirResolved' && strangeloop init --loop $($selectedLoop.Name)"
                 Write-Info "initCommand: $initCommand"
                 Write-WSLCommand "wsl -- bash -c `"$initCommand`""
@@ -2091,16 +2091,6 @@ try {
                 # Run strangeloop recurse to apply configuration changes
                 Write-Info "Applying configuration changes..."
                 
-                # Clear cache for reliable operation
-                Write-Info "Clearing StrangeLoop cache for reliable operation..."
-                $clearCacheCmd = "strangeloop library-registry clear-cache"
-                try {
-                    wsl -- bash -c $clearCacheCmd
-                    Write-Info "Cache cleared successfully"
-                } catch {
-                    Write-Warning "Cache clear failed, continuing anyway"
-                }
-                
                 $recurseCommand = "cd '$appDirResolved' && strangeloop recurse"
                 Write-WSLCommand "wsl -- bash -c `"$recurseCommand`""
                 wsl -- bash -c $recurseCommand
@@ -2121,6 +2111,16 @@ try {
             # Windows development - use Windows file system
             $defaultAppDir = "q:\src\$appName"
             Write-Info "Using Windows environment for project initialization"
+            
+            # Clear StrangeLoop cache at the beginning of Windows flow for reliable operation
+            Write-Info "Clearing StrangeLoop cache for reliable operation..."
+            try {
+                strangeloop library-registry clear-cache
+                Write-Info "Cache cleared successfully in Windows environment"
+            } catch {
+                Write-Warning "Cache clear failed in Windows, continuing anyway"
+            }
+            
             $appDir = Get-UserInput "Application directory (Windows path)" $defaultAppDir
             
             # Create directory in Windows and check for existing projects
@@ -2165,15 +2165,6 @@ try {
             if ($shouldInitialize) {
                 Write-Info "Initializing $($selectedLoop.Name) loop in Windows environment..."
                 
-                # Clear cache for reliable operation
-                Write-Info "Clearing StrangeLoop cache for reliable operation..."
-                try {
-                    strangeloop library-registry clear-cache
-                    Write-Info "Cache cleared successfully"
-                } catch {
-                    Write-Warning "Cache clear failed, continuing anyway"
-                }
-                
                 strangeloop init --loop $selectedLoop.Name
             } else {
                 Write-Info "Using existing StrangeLoop project directory"
@@ -2207,15 +2198,6 @@ try {
                     
                     # Run strangeloop recurse to apply configuration changes
                     Write-Info "Applying configuration changes..."
-                    
-                    # Clear cache for reliable operation
-                    Write-Info "Clearing StrangeLoop cache for reliable operation..."
-                    try {
-                        strangeloop library-registry clear-cache
-                        Write-Info "Cache cleared successfully"
-                    } catch {
-                        Write-Warning "Cache clear failed, continuing anyway"
-                    }
                     
                     strangeloop recurse
                     
