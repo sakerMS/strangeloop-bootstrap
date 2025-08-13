@@ -2524,15 +2524,24 @@ if (-not $SkipDevelopmentTools) {
         if ($poetryVersion) {
             Write-Success "Poetry is already installed ($poetryVersion)"
             # Ensure Poetry configuration is set - try both poetry and full path
+            Write-Info "Configuring Poetry virtual environment settings..."
             $configResult = Invoke-WSLCommand "poetry config virtualenvs.in-project true 2>/dev/null || ~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
-            if (-not $configResult) {
-                Write-Warning "Poetry configuration may have failed, but continuing..."
+            
+            # Verify the configuration was applied by checking the setting
+            $configCheck = Get-WSLCommandOutput "poetry config virtualenvs.in-project 2>/dev/null || ~/.local/bin/poetry config virtualenvs.in-project 2>/dev/null" $ubuntuDistro
+            if ($configCheck -eq "true" -or $configResult) {
+                Write-Success "Poetry configured to create virtual environments in project directories"
+            } else {
+                Write-Warning "Poetry configuration may have failed, but continuing with setup..."
+                Write-Info "You can manually configure this later with: poetry config virtualenvs.in-project true"
             }
         } else {
             Write-Info "Installing Poetry..."
             Invoke-WSLCommand "pipx install poetry" "Installing Poetry" $ubuntuDistro
             # Configure Poetry using full path since it may not be in PATH immediately
+            Write-Info "Configuring Poetry virtual environment settings..."
             Invoke-WSLCommand "~/.local/bin/poetry config virtualenvs.in-project true" "Configuring Poetry" $ubuntuDistro
+            Write-Success "Poetry installed and configured"
         }
         
         # Git configuration in WSL (Always Overwrite)
@@ -2579,16 +2588,25 @@ if (-not $SkipDevelopmentTools) {
             # Configure Git LFS since it's already installed
             Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
             $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
-            if ($configResult) {
+            
+            # Verify Git LFS configuration by checking if hooks are properly installed
+            $lfsConfigCheck = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+            
+            if ($configResult -or ($lfsConfigCheck -and $lfsConfigCheck -ne "NOT_CONFIGURED")) {
                 Write-Success "Git LFS configured successfully (hooks updated)"
             } else {
                 # Try manual hook resolution if force flag fails
-                Write-Warning "Force configuration failed, trying manual hook resolution..."
+                Write-Info "Attempting alternative Git LFS hook configuration..."
                 $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
-                if ($manualResult) {
+                
+                # Check again after manual update
+                $lfsConfigCheck2 = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+                
+                if ($manualResult -or ($lfsConfigCheck2 -and $lfsConfigCheck2 -ne "NOT_CONFIGURED")) {
                     Write-Success "Git LFS hooks updated successfully"
                 } else {
                     Write-Warning "Git LFS configuration may have issues - continuing anyway"
+                    Write-Info "You can manually configure Git LFS later with: git lfs install --force"
                 }
             }
         } else {
@@ -2616,16 +2634,25 @@ if (-not $SkipDevelopmentTools) {
                     # Now configure it with hook conflict handling
                     Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
                     $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
-                    if ($configResult) {
+                    
+                    # Verify Git LFS configuration by checking if hooks are properly installed
+                    $lfsConfigCheck = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+                    
+                    if ($configResult -or ($lfsConfigCheck -and $lfsConfigCheck -ne "NOT_CONFIGURED")) {
                         Write-Success "Git LFS configured successfully (hooks updated)"
                     } else {
                         # Try manual hook resolution if force flag fails
-                        Write-Warning "Force configuration failed, trying manual hook resolution..."
+                        Write-Info "Attempting alternative Git LFS hook configuration..."
                         $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
-                        if ($manualResult) {
+                        
+                        # Check again after manual update
+                        $lfsConfigCheck2 = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+                        
+                        if ($manualResult -or ($lfsConfigCheck2 -and $lfsConfigCheck2 -ne "NOT_CONFIGURED")) {
                             Write-Success "Git LFS hooks updated successfully"
                         } else {
                             Write-Warning "Git LFS configuration may have issues - continuing anyway"
+                            Write-Info "You can manually configure Git LFS later with: git lfs install --force"
                         }
                     }
                 } else {
@@ -2633,13 +2660,21 @@ if (-not $SkipDevelopmentTools) {
                     # Try configuration regardless since the package was installed
                     Write-Info "Configuring Git LFS (handling potential hook conflicts)..."
                     $configResult = Invoke-WSLCommand "git lfs install --force" "Configuring Git LFS with force flag" $ubuntuDistro
-                    if ($configResult) {
+                    
+                    # Verify Git LFS configuration by checking if hooks are properly installed
+                    $lfsConfigCheck = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+                    
+                    if ($configResult -or ($lfsConfigCheck -and $lfsConfigCheck -ne "NOT_CONFIGURED")) {
                         Write-Success "Git LFS configured successfully despite verification issues"
                     } else {
                         # Try manual hook resolution if force flag fails
-                        Write-Warning "Force configuration failed, trying manual hook resolution..."
+                        Write-Info "Attempting alternative Git LFS hook configuration..."
                         $manualResult = Invoke-WSLCommand "git lfs update --force" "Updating Git LFS hooks" $ubuntuDistro
-                        if ($manualResult) {
+                        
+                        # Check again after manual update
+                        $lfsConfigCheck2 = Get-WSLCommandOutput "git lfs env 2>/dev/null | grep 'git config filter.lfs.clean' || echo 'NOT_CONFIGURED'" $ubuntuDistro
+                        
+                        if ($manualResult -or ($lfsConfigCheck2 -and $lfsConfigCheck2 -ne "NOT_CONFIGURED")) {
                             Write-Success "Git LFS hooks updated successfully"
                         } else {
                             Write-Warning "Git LFS configuration failed. Manual configuration may be required."
