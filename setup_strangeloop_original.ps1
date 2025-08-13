@@ -26,8 +26,8 @@
 #   -SkipDevelopmentTools  : Skip development tool setup
 #   -UserName              : Git user name (collected during prerequisites if not provided)
 #   -UserEmail             : Git user email (collected during prerequisites if not provided)
-#   -ShowWSLWindows        : Control WSL terminal windows (default: visible, use to override)
-#   -VerboseWSL            : Enable verbose WSL session information
+#   -ShowWSLWindows        : (Legacy parameter - ignored, all execution is now direct)
+#   -VerboseWSL            : Enable verbose command information
 #   -Version               : Show version information and exit
 
 param(
@@ -35,7 +35,7 @@ param(
     [switch]$SkipDevelopmentTools,
     [string]$UserName,
     [string]$UserEmail,
-    [switch]$ShowWSLWindows,
+    [switch]$ShowWSLWindows,    # Legacy parameter - ignored in direct mode
     [switch]$VerboseWSL,
     [switch]$Help,
     [switch]$Version
@@ -60,6 +60,8 @@ $VERSION_CHANGELOG = @{
         "Date" = "2025-08-13"
         "Changes" = @(
             "Added comprehensive versioning system",
+            "Added DirectWSL mode for bypassing session management",
+            "Fixed hidden mode package management hanging issues",
             "Optimized cache clearing to run once per flow",
             "Enhanced error handling and user experience",
             "Improved WSL session management",
@@ -219,7 +221,7 @@ class WSLSessionConfig {
             'PackageManagement' {
                 $this.WorkingDirectory = '/tmp'
                 $this.RequiresSudo = $true
-                $this.Timeout = [TimeSpan]::FromMinutes(10)
+                $this.Timeout = [TimeSpan]::FromMinutes(1)
                 $this.MaxCommands = 20
             }
             'StrangeLoopCLI' {
@@ -460,17 +462,9 @@ function Show-QuickHelp {
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# Enterprise WSL Configuration
+# Simplified WSL Configuration - Always Direct Execution
 $script:WSLConfig = @{
     AuditLogPath = "$env:TEMP\StrangeLoop_WSL_Audit.jsonl"
-    MaxConcurrentSessions = 3
-    SessionPoolSize = 2
-    DefaultTimeout = [TimeSpan]::FromMinutes(5)
-    HealthCheckInterval = [TimeSpan]::FromMinutes(1)
-    CommandMarker = "STRANGELOOP_CMD_"
-    CompletionMarker = "STRANGELOOP_COMPLETE_"
-    ErrorMarker = "STRANGELOOP_ERROR_"
-    ShowWindows = if ($PSBoundParameters.ContainsKey('ShowWSLWindows')) { $ShowWSLWindows } else { $true }  # Default to visible
     VerboseMode = $VerboseWSL
     SudoPassword = $null  # Will be set after password collection
 }
@@ -609,7 +603,7 @@ class WSLSessionManager {
                 Write-Host "    • Working Directory: $($session.WorkingDirectory)" -ForegroundColor DarkGray
                 Write-Host "    • Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible (New Terminal)' } else { 'Hidden' })" -ForegroundColor DarkGray
                 Write-Host "    • Process ID: $($session.Process.Id)" -ForegroundColor DarkGray
-                Write-Host "    • Communication: $(if ($script:WSLConfig.ShowWindows) { 'Direct WSL commands' } else { 'Stream-based' })" -ForegroundColor DarkGray
+                Write-Host "    • Communication: $(if ($script:WSLConfig.DirectMode) { 'Direct WSL Execution' } elseif ($script:WSLConfig.ShowWindows) { 'Direct WSL commands' } else { 'Stream-based' })" -ForegroundColor DarkGray
             }
             
         } catch {
@@ -632,7 +626,7 @@ class WSLSessionManager {
                 $this.SendCommand($session, "export GIT_TERMINAL_PROMPT=0")
             }
             'PackageManagement' {
-                $this.SendCommand($session, "export DEBIAN_FRONTEND=noninteractive")
+                # No special setup needed for package management in direct mode
             }
             'StrangeLoopCLI' {
                 # Ensure projects directory exists with Linux paths
@@ -894,32 +888,27 @@ Register-EngineEvent PowerShell.Exiting -Action {
     }
 }
 
-# Enterprise WSL Integration Banner
+# Simplified WSL Integration Banner
 function Show-EnterpriseWSLBanner {
     Write-Host "`n╔══════════════════════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "║                    🚀 StrangeLoop Enterprise WSL Setup 2.0                   ║" -ForegroundColor Cyan
-    Write-Host "║                          Advanced Session Management                          ║" -ForegroundColor Cyan
+    Write-Host "║                    🚀 StrangeLoop Direct WSL Setup 3.0                       ║" -ForegroundColor Cyan
+    Write-Host "║                          Simplified Direct Execution                         ║" -ForegroundColor Cyan
     Write-Host "╠══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
     Write-Host "║  Features:                                                                   ║" -ForegroundColor White
-    Write-Host "║  ✅ Multi-Session WSL Management    ✅ Enterprise Error Handling             ║" -ForegroundColor White
-    Write-Host "║  ✅ Performance Monitoring          ✅ Comprehensive Audit Logging           ║" -ForegroundColor White
-    Write-Host "║  ✅ Auto-Retry with Backoff         ✅ Interactive Fallback Mode             ║" -ForegroundColor White
-    Write-Host "║  ✅ Command Type Optimization       ✅ Session Health Monitoring             ║" -ForegroundColor White
-    Write-Host "║  ✅ Configurable Window Visibility  ✅ Verbose Diagnostics Mode              ║" -ForegroundColor White
-    Write-Host "╠══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
-    Write-Host "║  WSL Session Types:                                                          ║" -ForegroundColor Yellow
-    Write-Host "║  🔧 GitOperations        🔧 PackageManagement                               ║" -ForegroundColor Yellow
-    Write-Host "║  🔧 StrangeLoopCLI       🔧 SystemConfiguration                             ║" -ForegroundColor Yellow
+    Write-Host "║  ✅ Direct WSL Execution         ✅ No Session Management Complexity         ║" -ForegroundColor White
+    Write-Host "║  ✅ Simple & Reliable            ✅ Fast Command Processing                   ║" -ForegroundColor White
+    Write-Host "║  ✅ No Persistent Windows        ✅ Clean Output Display                      ║" -ForegroundColor White
+    Write-Host "║  ✅ Immediate Feedback           ✅ Easy Troubleshooting                      ║" -ForegroundColor White
+    Write-Host "║  ✅ Cross-Platform Compatible    ✅ Lightweight Architecture                  ║" -ForegroundColor White
     Write-Host "╚══════════════════════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
     
-    Write-Host "`n📊 Initializing Enterprise WSL Session Manager..." -ForegroundColor Green
+    Write-Host "`n📊 Initializing Direct WSL Execution..." -ForegroundColor Green
     
     # Show current configuration
     Write-Host "`n⚙️  Current Configuration:" -ForegroundColor Yellow
-    Write-Host "   • WSL Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible (you will see WSL terminal windows)' } else { 'Hidden (background processing)' })" -ForegroundColor $(if ($script:WSLConfig.ShowWindows) { 'Green' } else { 'Gray' })
-    Write-Host "   • Verbose Mode: $(if ($script:WSLConfig.VerboseMode) { 'Enabled (detailed session info)' } else { 'Disabled (clean output)' })" -ForegroundColor $(if ($script:WSLConfig.VerboseMode) { 'Green' } else { 'Gray' })
-    Write-Host "   • Max Concurrent Sessions: $($script:WSLConfig.MaxConcurrentSessions)" -ForegroundColor Gray
-    Write-Host "   • Default Timeout: $($script:WSLConfig.DefaultTimeout.TotalMinutes) minutes" -ForegroundColor Gray
+    Write-Host "   • Execution Mode: Direct WSL (simplified and reliable)" -ForegroundColor Cyan
+    Write-Host "   • Session Management: Disabled (no persistent windows)" -ForegroundColor Gray
+    Write-Host "   • Verbose Mode: $(if ($script:WSLConfig.VerboseMode) { 'Enabled (detailed command info)' } else { 'Disabled (clean output)' })" -ForegroundColor $(if ($script:WSLConfig.VerboseMode) { 'Green' } else { 'Gray' })
     
     # Initialize audit logging
     if (Test-Path $script:WSLConfig.AuditLogPath) {
@@ -930,21 +919,14 @@ function Show-EnterpriseWSLBanner {
     }
     
     # Show usage tips
-    if ($script:WSLConfig.ShowWindows) {
-        Write-Host "`n💡 Window Mode Tips:" -ForegroundColor Cyan
-        Write-Host "   • You'll see a single persistent WSL terminal window" -ForegroundColor White
-        Write-Host "   • All commands execute in the same session for efficiency" -ForegroundColor White
-        Write-Host "   • The window shows real-time command execution" -ForegroundColor White
-        Write-Host "   • Don't close the WSL window manually - it'll auto-cleanup" -ForegroundColor White
-    } else {
-        Write-Host "`n💡 Hidden Mode Tips:" -ForegroundColor Cyan
-        Write-Host "   • Single persistent WSL session runs in background" -ForegroundColor White
-        Write-Host "   • All commands reuse the same session for better performance" -ForegroundColor White
-        Write-Host "   • All output appears in this main script window" -ForegroundColor White
-        Write-Host "   • Use -ShowWSLWindows parameter to see the WSL terminal" -ForegroundColor White
-    }
+    Write-Host "`n💡 Direct WSL Execution Tips:" -ForegroundColor Cyan
+    Write-Host "   • All commands use direct `wsl` execution for maximum compatibility" -ForegroundColor White
+    Write-Host "   • No persistent sessions or complex stream management" -ForegroundColor White
+    Write-Host "   • Each command runs independently with immediate output" -ForegroundColor White
+    Write-Host "   • Simple, reliable, and fast execution" -ForegroundColor White
+    Write-Host "   • All output appears in this PowerShell window" -ForegroundColor White
     
-    Write-Host "`n🎯 Enterprise WSL management ready!" -ForegroundColor Green
+    Write-Host "`n🎯 Direct WSL execution ready!" -ForegroundColor Green
 }
 
 # Display the enterprise banner
@@ -1097,6 +1079,47 @@ function Invoke-EnterpriseWSLCommand {
         [TimeSpan]$RetryDelay = [TimeSpan]::FromSeconds(2)
     )
     
+    # If DirectMode is enabled, delegate to direct execution
+    if ($script:WSLConfig.DirectMode) {
+        # Use the same direct execution logic as Invoke-WSLCommand
+        Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+        Write-Host "  Mode: Direct WSL Execution (Enterprise)" -ForegroundColor DarkGray
+        
+        # Prepare command (no special processing needed for direct execution)
+        $actualCommand = $Command
+        
+        # Handle sudo password if needed
+        if ($Command.StartsWith("sudo ") -and $SudoPassword) {
+            $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+            $actualCommand = "echo '$plaintextPassword' | sudo -S $($actualCommand.Substring(5))"
+        }
+        
+        try {
+            if ($script:WSLConfig.VerboseMode) {
+                Write-Host "  Command: $actualCommand" -ForegroundColor DarkGray
+            }
+            
+            $wslArgs = @("-d", "Ubuntu", "--", "bash", "-c", $actualCommand)
+            $result = & wsl @wslArgs 2>&1
+            $success = $LASTEXITCODE -eq 0
+            
+            if ($success) {
+                Write-Host "  ✅ Command completed successfully" -ForegroundColor Green
+                return $true
+            } else {
+                Write-Host "  ❌ Command failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+                if ($script:WSLConfig.VerboseMode -and $result) {
+                    Write-Host "  Error: $($result -join "`n")" -ForegroundColor Red
+                }
+                return $false
+            }
+        } catch {
+            Write-Host "  💥 Execution error: $($_.Exception.Message)" -ForegroundColor Red
+            return $false
+        }
+    }
+    
+    # Original enterprise session management logic
     $attempt = 0
     $lastResult = [WSLCommandResult]::UnexpectedOutput
     
@@ -1308,72 +1331,61 @@ function Invoke-WSLCommand {
 }
 
 # Updated legacy function to use enterprise backend
+# Simplified Direct WSL Execution Functions
 function Invoke-WSLCommand {
     param([string]$Command, [string]$Description, [string]$Distribution = "", [SecureString]$SudoPassword = $null)
     
-    # Use the persistent session if available, otherwise fall back to session type mapping
-    if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy -and $script:PersistentWSLSession.IsPersistent) {
-        # Use the persistent session for all commands
+    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] $Description..." -ForegroundColor Yellow
+    Write-Host "  Mode: Direct WSL Execution" -ForegroundColor DarkGray
+    
+    # Handle sudo password for direct execution
+    $actualCommand = $Command
+    if ($Command.StartsWith("sudo ") -and $SudoPassword) {
+        $plaintextPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($SudoPassword))
+        $sudoCommand = $Command.Substring(5)  # Remove "sudo " prefix
+        $actualCommand = "echo '$plaintextPassword' | sudo -S $sudoCommand"
+    }
+    
+    try {
         if ($script:WSLConfig.VerboseMode) {
-            Write-Host "  Using persistent WSL session [$($script:PersistentWSLSession.Id)] for command: $Command" -ForegroundColor DarkGray
-        }
-        return $script:WSLManager.ExecuteCommand($script:PersistentWSLSession, $Command, $Description)
-    } else {
-        # Fallback to session type mapping if no persistent session is available
-        $sessionType = [WSLSessionType]::GitOperations
-        if ($Command -match "sudo.*(apt|dpkg|snap)") {
-            $sessionType = [WSLSessionType]::PackageManagement
-        } elseif ($Command -match "strangeloop") {
-            $sessionType = [WSLSessionType]::StrangeLoopCLI
-        } elseif ($Command -match "sudo") {
-            $sessionType = [WSLSessionType]::SystemConfiguration
+            Write-Host "  Command: $actualCommand" -ForegroundColor DarkGray
         }
         
-        return Invoke-EnterpriseWSLCommand -Command $Command -Description $Description -SessionType $sessionType -SudoPassword $SudoPassword
+        $distArg = if ($Distribution) { $Distribution } else { "Ubuntu" }
+        $wslArgs = @("-d", $distArg, "--", "bash", "-c", $actualCommand)
+        
+        $result = & wsl @wslArgs 2>&1
+        $success = $LASTEXITCODE -eq 0
+        
+        if ($success) {
+            Write-Host "  ✅ Command completed successfully" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "  ❌ Command failed with exit code: $LASTEXITCODE" -ForegroundColor Red
+            if ($script:WSLConfig.VerboseMode -and $result) {
+                Write-Host "  Error: $($result -join "`n")" -ForegroundColor Red
+            }
+            return $false
+        }
+    } catch {
+        Write-Host "  💥 Execution error: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
     }
 }
 
 function Get-WSLCommandOutput {
     param([string]$Command, [string]$Distribution = "")
     
-    # Use the persistent session if available for consistency, but always use direct WSL execution
-    if ($script:PersistentWSLSession -and $script:PersistentWSLSession.IsHealthy -and $script:PersistentWSLSession.IsPersistent) {
-        if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Using persistent WSL session [$($script:PersistentWSLSession.Id)] with direct execution"
-        }
-        
-        # Use the distribution from the persistent session if not specified
-        $targetDistribution = if ($Distribution) { $Distribution } else { $script:PersistentWSLSession.Distribution }
-    } else {
-        # Fallback to specified distribution or default
-        $targetDistribution = if ($Distribution) { $Distribution } else { "Ubuntu-24.04" }
-        
-        if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: No persistent session available, using direct execution with distribution: $targetDistribution"
-        }
-    }
+    # Simplified direct WSL execution for getting output
+    $targetDistribution = if ($Distribution) { $Distribution } else { "Ubuntu" }
     
     try {
-        # Always use direct WSL execution - this is reliable and works consistently
-        $distroParam = if ($targetDistribution) { "-d $targetDistribution" } else { "" }
-        $wslCommand = "wsl $distroParam -- bash -c `"$Command`""
-        
         if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Executing direct WSL command: $wslCommand"
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Original command: $Command"
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Target distribution: $targetDistribution"
+            Write-Host "  Getting output from WSL command: $Command" -ForegroundColor DarkGray
         }
         
-        # Execute the command directly
-        $result = Invoke-Expression $wslCommand 2>&1
-        
-        if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Raw result type: $($result.GetType().Name)"
-            if ($result -is [array]) {
-                Write-Verbose "Get-WSLCommandOutput DEBUG: Raw result array length: $($result.Length)"
-            }
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Exit code: $LASTEXITCODE"
-        }
+        $wslArgs = @("-d", $targetDistribution, "--", "bash", "-c", $Command)
+        $result = & wsl @wslArgs 2>&1
         
         # Handle array results from WSL
         $output = if ($result -is [array]) {
@@ -1382,28 +1394,20 @@ function Get-WSLCommandOutput {
             $result
         }
         
-        # Convert to string if it's not already
-        $output = $output.ToString().Trim()
-        
         if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Final output length: $($output.Length)"
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Final output content: '$output'"
-            
-            if ([string]::IsNullOrEmpty($output)) {
-                Write-Verbose "Get-WSLCommandOutput DEBUG: Output is empty - command may have produced no output or failed"
-            }
+            Write-Host "  Output retrieved successfully" -ForegroundColor DarkGray
         }
         
         return $output
-        
     } catch {
         if ($script:WSLConfig.VerboseMode) {
-            Write-Verbose "Get-WSLCommandOutput DEBUG: Exception occurred: $($_.Exception.Message)"
+            Write-Host "  Error getting WSL output: $($_.Exception.Message)" -ForegroundColor DarkGray
         }
-        Write-Verbose "Error getting WSL output from direct execution: $($_.Exception.Message)"
         return $null
     }
 }
+
+# Enterprise WSL Utility Functions (Legacy - Simplified)
 
 # Enterprise WSL Utility Functions
 
@@ -1617,12 +1621,6 @@ function Get-SudoPassword {
     } else {
         # Always collect sudo password upfront for better UX
         Write-Info "Sudo password is required for package management operations."
-        
-        if ($script:WSLConfig.ShowWindows) {
-            Write-Host "💡 " -NoNewline -ForegroundColor Yellow
-            Write-Host "Collecting sudo password upfront for seamless WSL session experience." -ForegroundColor Cyan
-            Write-Host "   This will be used to pre-configure sudo access in WSL terminals." -ForegroundColor DarkGray
-        }
         
         Write-Host "Please enter your WSL sudo password (input will be hidden):" -ForegroundColor Yellow
         
@@ -2230,7 +2228,9 @@ Write-Info "Checking StrangeLoop installation..."
 Invoke-CommandWithDuration -Description "Checking StrangeLoop installation" -ScriptBlock {
     if (Test-Command "strangeloop") {
         try {
+            # Check strangeloop version directly
             $strangeloopVersion = strangeloop --version 2>$null
+            
             if ($strangeloopVersion) {
                 Write-Success "StrangeLoop is already installed (version: $strangeloopVersion)"
             } else {
@@ -2245,7 +2245,16 @@ Invoke-CommandWithDuration -Description "Checking StrangeLoop installation" -Scr
         try {
             # Download if not exists
             if (-not (Test-Path "strangeloop.msi")) {
-                az artifacts universal download --organization "https://msasg.visualstudio.com/" --project "Bing_Ads" --scope project --feed "strangeloop" --name "strangeloop-x86" --version "*" --path . --only-show-errors
+                Write-Info "Downloading StrangeLoop installer..."
+                # Download directly with timeout
+                $downloadJob = Start-Job -ScriptBlock { 
+                    az artifacts universal download --organization "https://msasg.visualstudio.com/" --project "Bing_Ads" --scope project --feed "strangeloop" --name "strangeloop-x86" --version "*" --path . --only-show-errors 2>&1
+                }
+                $downloadResult = Wait-Job $downloadJob -Timeout 180 | Receive-Job  # 3 minute timeout
+                Remove-Job $downloadJob -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path "strangeloop.msi")) {
+                    throw "Download timeout or failed"
+                }
             }
             
             # Install
@@ -2467,12 +2476,8 @@ if (-not $SkipDevelopmentTools) {
         }
     }
     
-    $confirmPlatform = Get-UserInput "`nProceed with this platform configuration? (y/n)" "y"
-    if ($confirmPlatform -notmatch '^[Yy]') {
-        Write-Info "Platform setup cancelled by user."
-        Write-Info "You can run this script again to choose a different configuration."
-        exit 0
-    }
+    # Automatically proceed with the selected platform configuration
+    Write-Info "Proceeding with platform configuration..."
 }
 
 # Step 3: Development Environment Setup
@@ -2562,25 +2567,24 @@ if (-not $SkipDevelopmentTools) {
         $script:WSLConfig.SudoPassword = $sudoPassword
         if ($sudoPassword) {
             Write-Host "✓ " -NoNewline -ForegroundColor Green
-            Write-Host "Sudo credentials configured for WSL session management" -ForegroundColor Cyan
+            Write-Host "Sudo credentials configured for direct WSL execution" -ForegroundColor Cyan
         }
         
-        # Create a single persistent WSL session for all subsequent operations
-        Write-Info "Creating persistent WSL session for development setup..."
-        $script:PersistentWSLSession = $script:WSLManager.GetOrCreateSession([WSLSessionType]::PackageManagement)
-        
+        # All WSL commands will use direct execution - no session management needed
+        Write-Info "Direct WSL execution mode - ready for development setup..."
         if ($script:WSLConfig.VerboseMode) {
-            Write-Host "  ✓ Persistent WSL session [$($script:PersistentWSLSession.Id)] ready for all operations" -ForegroundColor DarkGreen
-            Write-Host "  This session will be reused for package management, Git operations, and project setup" -ForegroundColor DarkGray
+            Write-Host "  ✓ All WSL commands will use direct execution" -ForegroundColor DarkGreen
+            Write-Host "  No persistent sessions or windows will be created" -ForegroundColor DarkGray
         }
-        
-        # Mark this session as the persistent one for all subsequent operations
-        $script:PersistentWSLSession.IsPersistent = $true
         
         # Check and update packages intelligently
         Write-Info "Updating package lists..."
         
-        $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package lists" $ubuntuDistro
+        # Use quiet mode for clean output in direct execution
+        $aptUpdateCmd = "sudo apt update -qq"
+        
+        # Always use direct WSL execution for simplicity and reliability
+        $updateResult = Invoke-WSLCommand $aptUpdateCmd "Updating package lists" $ubuntuDistro $script:WSLConfig.SudoPassword
         
         # Since apt update often reports success even when Invoke-WSLCommand returns false,
         # we'll be less strict about the warning and only show it if we detect actual failures
@@ -2623,13 +2627,15 @@ if (-not $SkipDevelopmentTools) {
                 $upgradeChoice = Get-UserInput "`nProceed with system package upgrades? (y/n)" "n"
                 if ($upgradeChoice -match '^[Yy]') {
                     Write-Info "Proceeding with package upgrades..."
-                    Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
+                    $aptUpgradeCmd = "sudo apt upgrade -y -qq"
+                    Invoke-WSLCommand $aptUpgradeCmd "Upgrading system packages" $ubuntuDistro $script:WSLConfig.SudoPassword
                 } else {
                     Write-Success "Skipping package upgrades to preserve current versions"
                 }
             } else {
                 # No critical packages, safe to upgrade
-                Invoke-WSLCommand "sudo apt upgrade -y" "Upgrading system packages" $ubuntuDistro
+                $aptUpgradeCmd = "sudo apt upgrade -y -qq"
+                Invoke-WSLCommand $aptUpgradeCmd "Upgrading system packages" $ubuntuDistro $script:WSLConfig.SudoPassword
             }
         } else {
             Write-Success "System packages are up to date"
@@ -2653,7 +2659,8 @@ if (-not $SkipDevelopmentTools) {
                 $pythonUpgradeChoice = Get-UserInput "`nUpgrade Python to latest version? (y/n)" "n"
                 if ($pythonUpgradeChoice -match '^[Yy]') {
                     Write-Info "Installing latest Python version..."
-                    Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
+                    $aptInstallPythonCmd = "sudo apt install -y -qq python3 python3-pip python3-venv python3-dev build-essential"
+                    Invoke-WSLCommand $aptInstallPythonCmd "Installing Python tools" $ubuntuDistro $script:WSLConfig.SudoPassword
                 } else {
                     Write-Success "Keeping current Python version: $pythonVersion"
                     Write-Info "Note: Some StrangeLoop templates may require Python 3.9+"
@@ -2661,7 +2668,8 @@ if (-not $SkipDevelopmentTools) {
             }
         } else {
             Write-Info "Python3 not found, installing..."
-            Invoke-WSLCommand "sudo apt install -y python3 python3-pip python3-venv python3-dev build-essential" "Installing Python tools" $ubuntuDistro
+            $aptInstallPythonBaseCmd = "sudo apt install -y -qq python3 python3-pip python3-venv python3-dev build-essential"
+            Invoke-WSLCommand $aptInstallPythonBaseCmd "Installing Python tools" $ubuntuDistro $script:WSLConfig.SudoPassword
         }
         
         # Check pipx installation
@@ -2670,7 +2678,8 @@ if (-not $SkipDevelopmentTools) {
             Write-Success "pipx is already installed (version: $pipxVersion)"
         } else {
             Write-Info "Installing pipx..."
-            Invoke-WSLCommand "sudo apt install -y pipx || python3 -m pip install --user pipx" "Installing pipx" $ubuntuDistro
+            $aptInstallPipxCmd = "sudo apt install -y -qq pipx || python3 -m pip install --user pipx"
+            Invoke-WSLCommand $aptInstallPipxCmd "Installing pipx" $ubuntuDistro $script:WSLConfig.SudoPassword
             Invoke-WSLCommand "pipx ensurepath" "Configuring pipx PATH" $ubuntuDistro
         }
         
@@ -2769,7 +2778,7 @@ if (-not $SkipDevelopmentTools) {
             Write-Info "Git LFS not found. Installing Git LFS in WSL..."
             
             # Update package list first to ensure we have latest package information
-            $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package list" $ubuntuDistro
+            $updateResult = Invoke-WSLCommand "sudo apt update" "Updating package list" $ubuntuDistro $script:WSLConfig.SudoPassword
             if ($updateResult) {
                 Write-Success "Package list updated"
             } else {
@@ -2777,7 +2786,8 @@ if (-not $SkipDevelopmentTools) {
             }
             
             # Install Git LFS
-            $lfsInstallResult = Invoke-WSLCommand "sudo apt install -y git-lfs" "Installing Git LFS package" $ubuntuDistro
+            $aptInstallGitLfsCmd = "sudo apt install -y -qq git-lfs"
+            $lfsInstallResult = Invoke-WSLCommand $aptInstallGitLfsCmd "Installing Git LFS package" $ubuntuDistro $script:WSLConfig.SudoPassword
             if ($lfsInstallResult) {
                 Write-Success "Git LFS package installed"
                 
@@ -2840,13 +2850,15 @@ if (-not $SkipDevelopmentTools) {
             } else {
                 Write-Warning "Git LFS installation failed. Attempting alternative installation..."
                 # Try alternative installation method using curl
-                $curlInstallResult = Invoke-WSLCommand "curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash && sudo apt install -y git-lfs" "Installing Git LFS via curl" $ubuntuDistro
+                $curlInstallGitLfsCmd = "curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash && sudo apt install -y -qq git-lfs"
+                $curlInstallResult = Invoke-WSLCommand $curlInstallGitLfsCmd "Installing Git LFS via curl" $ubuntuDistro $script:WSLConfig.SudoPassword
                 if ($curlInstallResult) {
                     Write-Success "Git LFS installed via alternative method"
                     Invoke-WSLCommand "git lfs install" "Configuring Git LFS" $ubuntuDistro
                 } else {
                     Write-Error "All Git LFS installation methods failed. Please install manually:"
-                    Write-Info "Manual installation: wsl -- sudo apt update && sudo apt install -y git-lfs && git lfs install"
+                    $manualInstallCmd = "wsl -- sudo apt update && sudo apt install -y -qq git-lfs && git lfs install"
+                    Write-Info "Manual installation: $manualInstallCmd"
                 }
             }
         }
