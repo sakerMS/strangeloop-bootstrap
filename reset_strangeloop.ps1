@@ -59,7 +59,8 @@ function Get-UserConfirmation {
         return $true
     }
     
-    $choice = Read-Host "$Message (y/n)"
+    $choice = Read-Host "$Message [y/N - default: N]"
+    # Default to No if empty input or anything other than explicit Yes
     return $choice -match '^[Yy]'
 }
 
@@ -109,10 +110,17 @@ if ($WhatIf) {
     Write-Info "This includes:"
     Write-Info "  • temp-strangeloop-scripts directory and downloaded files"
     Write-Info "  • Execution policy changes (reset to Restricted)"
+    Write-Info "  • WSL uninstallation (optional - will ask for confirmation)"
+    Write-Info "  • Azure CLI uninstallation (optional - will ask for confirmation)"
     Write-Info "  • StrangeLoop CLI uninstallation (optional - will ask for confirmation)"
     Write-Info "  • Temporary files created during setup"
     Write-Info ""
     Write-Warning "Note: Your StrangeLoop projects will be preserved"
+    Write-Warning "WSL removal will delete ALL Linux distributions and data!"
+    Write-Info ""
+    Write-Host "�️  SAFETY: All confirmations default to NO (safe)" -ForegroundColor Green
+    Write-Host "   → Just press ENTER to decline any destructive action" -ForegroundColor Green
+    Write-Host "   → Type 'y' and press ENTER only if you want to proceed" -ForegroundColor Yellow
     
     if (-not $Force) {
         $proceed = Get-UserConfirmation "`nAre you sure you want to proceed with the reset?"
@@ -153,7 +161,116 @@ if ($currentPolicy -eq "RemoteSigned") {
     Write-Info "Execution policy is $currentPolicy (not changed by setup)"
 }
 
-# Step 3: Uninstall StrangeLoop CLI (Optional)
+# Step 3: Uninstall WSL (Windows Subsystem for Linux)
+Write-Step "WSL Uninstallation"
+
+# Check if WSL is installed
+$wslInstalled = $false
+try {
+    $wslDistros = wsl --list --quiet 2>$null
+    if ($wslDistros -and ($wslDistros | Where-Object { $_.Trim() -ne "" })) {
+        $wslInstalled = $true
+        Write-Info "WSL is installed with the following distributions:"
+        $wslDistros | Where-Object { $_.Trim() -ne "" } | ForEach-Object {
+            Write-Info "  • $($_.Trim())"
+        }
+    }
+} catch {
+    # WSL command not found or failed
+}
+
+if ($wslInstalled) {
+    Write-Warning "⚠ This will remove ALL WSL distributions and data!"
+    Write-Warning "⚠ All Linux files, environments, and projects in WSL will be permanently deleted!"
+    $shouldUninstallWSL = Get-UserConfirmation "Do you want to uninstall WSL and all distributions? (DESTRUCTIVE)"
+    
+    if ($shouldUninstallWSL) {
+        if ($WhatIf) {
+            Write-Info "Would unregister all WSL distributions and disable WSL feature"
+        } else {
+            Write-Info "Unregistering all WSL distributions..."
+            try {
+                # Unregister all WSL distributions
+                wsl --list --quiet | ForEach-Object { 
+                    $distro = $_.Trim()
+                    if ($distro -and $distro -ne "") {
+                        Write-Info "Unregistering distribution: $distro"
+                        wsl --unregister $distro
+                    }
+                }
+                Write-Success "All WSL distributions unregistered"
+                
+                # Disable WSL feature
+                Write-Info "Disabling Windows Subsystem for Linux feature..."
+                Disable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart
+                Write-Success "WSL feature disabled"
+                Write-Warning "A system restart may be required to complete WSL removal"
+                
+            } catch {
+                Write-Warning "WSL uninstallation failed: $($_.Exception.Message)"
+            }
+        }
+    } else {
+        Write-Info "Keeping WSL and distributions installed"
+    }
+} else {
+    Write-Info "WSL is not installed or has no distributions (already clean)"
+}
+
+# Step 4: Uninstall Azure CLI
+Write-Step "Azure CLI Uninstallation"
+
+# Check if Azure CLI is installed
+$azureCliInstalled = $false
+try {
+    $null = Get-Command "az" -ErrorAction SilentlyContinue
+    if ($?) {
+        $azureCliInstalled = $true
+        $azVersion = az --version 2>$null | Select-Object -First 1
+        Write-Info "Azure CLI is installed: $azVersion"
+    }
+} catch {
+    # Command not found
+}
+
+if ($azureCliInstalled) {
+    $shouldUninstallAzure = Get-UserConfirmation "Do you want to uninstall Microsoft Azure CLI?"
+    
+    if ($shouldUninstallAzure) {
+        if ($WhatIf) {
+            Write-Info "Would attempt to uninstall Microsoft Azure CLI using winget"
+        } else {
+            Write-Info "Attempting to uninstall Microsoft Azure CLI using winget..."
+            try {
+                winget uninstall --name "Microsoft Azure CLI"
+                Write-Success "Azure CLI uninstallation command executed"
+                
+                # Verify uninstallation
+                Start-Sleep -Seconds 3
+                $null = Get-Command "az" -ErrorAction SilentlyContinue
+                if (-not $?) {
+                    Write-Success "✓ Azure CLI has been successfully uninstalled"
+                } else {
+                    Write-Warning "Azure CLI may still be installed. Verification failed."
+                    Write-Info "You may need to restart your terminal or complete the uninstallation manually"
+                }
+                
+            } catch {
+                Write-Warning "Azure CLI uninstallation failed: $($_.Exception.Message)"
+                Write-Info "You can try uninstalling manually:"
+                Write-Info "1. Use Windows Settings → Apps → Apps & features"
+                Write-Info "2. Search for 'Microsoft Azure CLI' and uninstall"
+                Write-Info "3. Or use: winget uninstall --name \"Microsoft Azure CLI\""
+            }
+        }
+    } else {
+        Write-Info "Keeping Azure CLI installed"
+    }
+} else {
+    Write-Info "Azure CLI is not installed (already clean)"
+}
+
+# Step 5: Uninstall StrangeLoop CLI
 Write-Step "StrangeLoop CLI Uninstallation"
 
 # Check if StrangeLoop CLI is installed
@@ -170,166 +287,34 @@ try {
 }
 
 if ($strangeloopInstalled) {
-    $shouldUninstall = Get-UserConfirmation "Do you want to uninstall StrangeLoop CLI? (This will remove the CLI but preserve your projects)"
+    $shouldUninstallStrangeloop = Get-UserConfirmation "Do you want to uninstall Strangeloop CLI? (This will remove the CLI but preserve your projects)"
     
-    if ($shouldUninstall) {
+    if ($shouldUninstallStrangeloop) {
         if ($WhatIf) {
-            Write-Info "Would attempt to uninstall StrangeLoop CLI"
+            Write-Info "Would attempt to uninstall Strangeloop CLI using winget"
         } else {
-            Write-Info "Attempting to uninstall StrangeLoop CLI..."
-            
-            # Method 1: Try using MSI product code (most reliable for MSI packages)
-            $uninstalled = $false
+            Write-Info "Attempting to uninstall Strangeloop CLI using winget..."
             try {
-                $strangeloopApp = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "strangeloop CLI" }
-                if ($strangeloopApp) {
-                    Write-Info "Found StrangeLoop CLI: $($strangeloopApp.Name) v$($strangeloopApp.Version)"
-                    Write-Info "Product Code: $($strangeloopApp.IdentifyingNumber)"
-                    Write-Info "Uninstalling using MSI product code..."
-                    
-                    # Use msiexec for silent uninstall
-                    $msiResult = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x", "$($strangeloopApp.IdentifyingNumber)", "/quiet", "/norestart" -Wait -PassThru
-                    
-                    if ($msiResult.ExitCode -eq 0) {
-                        Write-Success "StrangeLoop CLI uninstalled successfully using MSI"
-                        $uninstalled = $true
-                    } else {
-                        Write-Warning "MSI uninstall returned exit code: $($msiResult.ExitCode)"
-                    }
-                } else {
-                    Write-Info "StrangeLoop CLI not found in Win32_Product"
-                }
-            } catch {
-                Write-Warning "MSI uninstall failed: $($_.Exception.Message)"
-            }
-            
-            # Method 2: Try using Get-Package if MSI method failed
-            if (-not $uninstalled) {
-                try {
-                    # Search for packages with various name patterns
-                    $packagePatterns = @("*strangeloop*", "*strange*", "strangeloop CLI")
-                    foreach ($pattern in $packagePatterns) {
-                        $strangeloopPackage = Get-Package $pattern -ErrorAction SilentlyContinue
-                        if ($strangeloopPackage) {
-                            Write-Info "Found package: $($strangeloopPackage.Name) v$($strangeloopPackage.Version)"
-                            $strangeloopPackage | Uninstall-Package -Force
-                            Write-Success "StrangeLoop CLI uninstalled successfully using Package Manager"
-                            $uninstalled = $true
-                            break
-                        }
-                    }
-                    if (-not $uninstalled) {
-                        Write-Info "No matching packages found in Package Manager"
-                    }
-                } catch {
-                    Write-Warning "Package Manager uninstall failed: $($_.Exception.Message)"
-                }
-            }
-            
-            # Method 3: Try WMI Uninstall method if others failed
-            if (-not $uninstalled) {
-                try {
-                    $strangeloopApp = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -like "*strangeloop*" }
-                    if ($strangeloopApp) {
-                        Write-Info "Found StrangeLoop application via WMI: $($strangeloopApp.Name)"
-                        Write-Info "Attempting WMI uninstall (this may take a moment)..."
-                        $wmiResult = $strangeloopApp.Uninstall()
-                        if ($wmiResult.ReturnValue -eq 0) {
-                            Write-Success "StrangeLoop CLI uninstalled successfully using WMI"
-                            $uninstalled = $true
-                        } else {
-                            Write-Warning "WMI uninstall returned code: $($wmiResult.ReturnValue)"
-                        }
-                    }
-                } catch {
-                    Write-Warning "WMI uninstall failed: $($_.Exception.Message)"
-                }
-            }
-            
-            # Method 4: Registry-based uninstall
-            if (-not $uninstalled) {
-                try {
-                    Write-Info "Trying registry-based uninstall..."
-                    $uninstallKey = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName -like "*strangeloop*" }
-                    if ($uninstallKey) {
-                        Write-Info "Found uninstall registry entry: $($uninstallKey.DisplayName)"
-                        if ($uninstallKey.QuietUninstallString) {
-                            Write-Info "Executing quiet uninstall command..."
-                            $quietCmd = $uninstallKey.QuietUninstallString
-                            Invoke-Expression $quietCmd
-                            Write-Success "StrangeLoop CLI uninstalled using quiet uninstall string"
-                            $uninstalled = $true
-                        } elseif ($uninstallKey.UninstallString) {
-                            Write-Info "Found uninstall string: $($uninstallKey.UninstallString)"
-                            # Parse msiexec command and make it silent
-                            if ($uninstallKey.UninstallString -match "msiexec.*?(\{[^}]+\})") {
-                                $productCode = $matches[1]
-                                Write-Info "Extracted product code: $productCode"
-                                $regResult = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x", $productCode, "/quiet", "/norestart" -Wait -PassThru
-                                if ($regResult.ExitCode -eq 0) {
-                                    Write-Success "StrangeLoop CLI uninstalled using registry product code"
-                                    $uninstalled = $true
-                                }
-                            }
-                        }
-                    }
-                } catch {
-                    Write-Warning "Registry-based uninstall failed: $($_.Exception.Message)"
-                }
-            }
-            
-            # Method 5: Manual instructions if all automatic methods fail
-            if (-not $uninstalled) {
-                Write-Warning "All automatic uninstallation methods failed."
-                Write-Info "Please uninstall manually using one of these methods:"
-                Write-Info ""
-                Write-Info "Method A - Windows Settings:"
-                Write-Info "1. Open Settings → Apps → Apps & features"
-                Write-Info "2. Search for 'strangeloop'"
-                Write-Info "3. Click on 'strangeloop CLI' and select 'Uninstall'"
-                Write-Info ""
-                Write-Info "Method B - Control Panel:"
-                Write-Info "1. Open Control Panel → Programs → Programs and Features"
-                Write-Info "2. Find 'strangeloop CLI' and right-click → Uninstall"
-                Write-Info ""
-                Write-Info "Method C - Manual MSI command:"
-                Write-Info "msiexec /x {75FCBA9A-5321-48DE-9A9A-EF5FA1E16858} /quiet /norestart"
-            }
-            
-            # Verify uninstallation with enhanced checking
-            Write-Info "Verifying uninstallation..."
-            Start-Sleep -Seconds 3
-            
-            $stillInstalled = $false
-            try {
-                # Check command availability
+                winget uninstall --name "Strangeloop CLI"
+                Write-Success "StrangeLoop CLI uninstallation command executed"
+                
+                # Verify uninstallation
+                Start-Sleep -Seconds 3
                 $null = Get-Command "strangeloop" -ErrorAction SilentlyContinue
-                if ($?) {
-                    $stillInstalled = $true
+                if (-not $?) {
+                    Write-Success "✓ StrangeLoop CLI has been successfully uninstalled"
+                    Write-Success "✓ Command is no longer available in PATH"
+                } else {
+                    Write-Warning "StrangeLoop CLI may still be installed. Verification failed."
+                    Write-Info "You may need to restart your terminal or complete the uninstallation manually"
                 }
+                
             } catch {
-                # Command not found is good
-            }
-            
-            # Double-check with WMI
-            try {
-                $remainingApp = Get-WmiObject -Class Win32_Product | Where-Object { $_.Name -eq "strangeloop CLI" }
-                if ($remainingApp) {
-                    $stillInstalled = $true
-                }
-            } catch {
-                # Error checking is fine
-            }
-            
-            if ($stillInstalled) {
-                Write-Warning "StrangeLoop CLI may still be installed. Uninstallation verification failed."
-                Write-Info "You may need to:"
-                Write-Info "1. Restart your terminal/PowerShell session"
-                Write-Info "2. Complete the uninstallation manually"
-                Write-Info "3. Restart your computer if prompted"
-            } else {
-                Write-Success "✓ StrangeLoop CLI has been successfully uninstalled"
-                Write-Success "✓ Command is no longer available in PATH"
+                Write-Warning "StrangeLoop CLI uninstallation failed: $($_.Exception.Message)"
+                Write-Info "You can try uninstalling manually:"
+                Write-Info "1. Use Windows Settings → Apps → Apps & features"
+                Write-Info "2. Search for 'Strangeloop CLI' and uninstall"
+                Write-Info "3. Or use: winget uninstall --name \"Strangeloop CLI\""
             }
         }
     } else {
@@ -339,7 +324,7 @@ if ($strangeloopInstalled) {
     Write-Info "StrangeLoop CLI is not installed (already clean)"
 }
 
-# Step 4: Clean up any remaining temporary files
+# Step 6: Clean up any remaining temporary files
 Write-Step "Cleaning Temporary Files"
 
 $tempPaths = @(
@@ -390,6 +375,8 @@ if ($WhatIf) {
     Write-Info "The following areas were processed:"
     Write-Info "  • Temporary scripts directory (temp-strangeloop-scripts)"
     Write-Info "  • PowerShell execution policy"
+    Write-Info "  • WSL uninstallation (if requested)"
+    Write-Info "  • Azure CLI uninstallation (if requested)"
     Write-Info "  • StrangeLoop CLI uninstallation (if requested)"
     Write-Info "  • Temporary files"
     Write-Info ""
