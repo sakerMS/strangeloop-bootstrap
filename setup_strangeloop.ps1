@@ -50,7 +50,7 @@ Write-Host @"
  
 ╔═══════════════════════════════════════════════════════════════╗
 ║              StrangeLoop CLI Setup - Complete Setup           ║
-║                    Version 7.3 - Enhanced Enterprise          ║
+║                    Version 7.4 - Enhanced Enterprise          ║
 ║                         Unified Architecture                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor Green
@@ -1904,8 +1904,8 @@ if ($needsLinux -or (-not $isWindowsOnly)) {
                         Write-Info "  Name: $gitUserName"
                         Write-Info "  Email: $gitUserEmail"
                         Write-Info "  Default branch: $gitdefaultBranch"
-                        Write-Info "  Merge tool: $gitMergeTool"
-                        Write-Info "  Credential helper: $gitCredentialHelper"
+                        Write-Info "  Merge tool: mergetool.vscode.cmd"
+                        Write-Info "  Credential helper: Windows Credential Manager"
                     } else {
                         Write-Warning "Git configuration verification failed. You may need to configure Git manually."
                     }
