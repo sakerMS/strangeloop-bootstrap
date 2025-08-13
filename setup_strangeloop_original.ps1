@@ -3088,6 +3088,22 @@ try {
         # Initialize the new StrangeLoop project (directory has been cleaned if it existed)
         Write-Info "Initializing $($selectedLoop.Name) loop in WSL environment..."
         
+        # Clear StrangeLoop cache before initialization for reliability
+        Write-Info "Clearing StrangeLoop library registry cache for reliable operation..."
+        $clearCacheCommand = "wsl -d $ubuntuDistro -- bash -c `"strangeloop library-registry clear-cache`""
+        Write-Verbose "Direct WSL command: $clearCacheCommand"
+        
+        try {
+            $clearResult = Invoke-Expression $clearCacheCommand 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  ✓ StrangeLoop cache cleared successfully" -ForegroundColor Green
+            } else {
+                Write-Host "  ⚠ Cache clear completed with warnings (continuing)" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "  ⚠ Cache clear had issues but continuing with initialization" -ForegroundColor Yellow
+        }
+        
         # Use direct WSL command for initialization
         Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Initializing StrangeLoop project..." -ForegroundColor Yellow
         $initCommand = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && strangeloop init --loop $($selectedLoop.Name)`""
@@ -3167,6 +3183,16 @@ try {
                     
                     # Run strangeloop recurse to apply settings changes
                     Write-Info "Running strangeloop recurse to apply configuration changes..."
+                    
+                    # Clear cache before recurse for reliability
+                    Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Clearing cache before configuration..." -ForegroundColor Yellow
+                    $clearCacheCommand2 = "wsl -d $ubuntuDistro -- bash -c `"cd '$appDir' && strangeloop library-registry clear-cache`""
+                    try {
+                        Invoke-Expression $clearCacheCommand2 2>&1 | Out-Null
+                        Write-Host "  ✓ Cache cleared for recurse operation" -ForegroundColor Green
+                    } catch {
+                        Write-Host "  ⚠ Cache clear had issues but continuing" -ForegroundColor Yellow
+                    }
                     
                     # Use direct WSL command for recurse
                     Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Applying configuration changes..." -ForegroundColor Yellow
@@ -3271,6 +3297,15 @@ try {
         
         Set-Location $appDir
         
+        # Clear StrangeLoop cache before initialization for reliability
+        Write-Info "Clearing StrangeLoop library registry cache for reliable operation..."
+        try {
+            strangeloop library-registry clear-cache
+            Write-Success "StrangeLoop cache cleared successfully"
+        } catch {
+            Write-Warning "Cache clear had issues but continuing with initialization: $($_.Exception.Message)"
+        }
+        
         # Initialize the new StrangeLoop project (directory has been cleaned if it existed)
         Write-Info "Initializing $($selectedLoop.Name) loop in Windows environment..."
         
@@ -3305,6 +3340,16 @@ try {
                     
                     # Run strangeloop recurse to apply settings changes
                     Write-Info "Running strangeloop recurse to apply configuration changes..."
+                    
+                    # Clear cache before recurse for reliability
+                    Write-Info "Clearing cache before configuration apply..."
+                    try {
+                        strangeloop library-registry clear-cache
+                        Write-Host "  ✓ Cache cleared for recurse operation" -ForegroundColor Green
+                    } catch {
+                        Write-Warning "Cache clear had issues but continuing: $($_.Exception.Message)"
+                    }
+                    
                     try {
                         strangeloop recurse
                         Write-Success "Configuration applied successfully with strangeloop recurse"
