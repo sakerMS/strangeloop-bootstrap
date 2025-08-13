@@ -13,10 +13,12 @@
 # Execution Policy: RemoteSigned or Unrestricted required
 #
 # Usage Examples:
-#   .\setup-strangeloop-optimized.ps1
-#   .\setup-strangeloop-optimized.ps1 -ShowWSLWindows
-#   .\setup-strangeloop-optimized.ps1 -VerboseWSL -ShowWSLWindows
-#   .\setup-strangeloop-optimized.ps1 -SkipPrerequisites -UserName "John Doe" -UserEmail "john@company.com"
+#   .\setup-strangeloop-optimized.ps1                               # Standard installation
+#   .\setup-strangeloop-optimized.ps1 -Help                         # Show detailed help
+#   .\setup-strangeloop-optimized.ps1 -ShowWSLWindows               # Show WSL windows
+#   .\setup-strangeloop-optimized.ps1 -VerboseWSL -ShowWSLWindows   # Debug mode
+#   .\setup-strangeloop-optimized.ps1 -SkipPrerequisites            # Skip prerequisite checks
+#   .\setup-strangeloop-optimized.ps1 -UserName "John" -UserEmail "john@co.com"
 #
 # Parameters:
 #   -SkipPrerequisites     : Skip prerequisite installation checks
@@ -32,7 +34,8 @@ param(
     [string]$UserName,
     [string]$UserEmail,
     [switch]$ShowWSLWindows,
-    [switch]$VerboseWSL
+    [switch]$VerboseWSL,
+    [switch]$Help
 )
 
 # Enterprise WSL Management Enums and Classes
@@ -173,6 +176,143 @@ class WSLAuditEntry {
         $this.User = $env:USERNAME
         $this.ComputerName = $env:COMPUTERNAME
     }
+}
+
+# Help Function
+function Show-ScriptHelp {
+    Write-Host @"
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                🚀 StrangeLoop Enterprise WSL Setup 2.0 - Help               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📋 DESCRIPTION:
+   Automated setup for StrangeLoop development environment with enterprise-grade
+   WSL session management, including Python, Poetry, Git, Docker, and Azure CLI.
+
+🎯 BASIC USAGE:
+   .\setup_strangeloop_old.ps1                    # Standard installation
+   .\setup_strangeloop_old.ps1 -Help              # Show this help
+
+⚙️  PARAMETERS:
+
+   🔧 SETUP CONTROL:
+   -SkipPrerequisites        Skip prerequisite installation checks
+                             Use when tools are already installed
+   
+   -SkipDevelopmentTools     Skip development tool setup
+                             Use for minimal installation
+   
+   -UserName "John Doe"      Git user name (avoids interactive prompt)
+                             Example: -UserName "Jane Smith"
+   
+   -UserEmail "user@co.com"  Git user email (avoids interactive prompt)
+                             Example: -UserEmail "jane@company.com"
+
+   🖥️  WSL SESSION CONTROL:
+   -ShowWSLWindows           Show WSL terminal windows during execution
+                             • See real-time command execution
+                             • Great for debugging and transparency
+                             • Each session type gets its own window
+   
+   -VerboseWSL               Enable detailed WSL session information
+                             • Session IDs, process details
+                             • Performance metrics
+                             • Comprehensive diagnostics
+
+💡 USAGE EXAMPLES:
+
+   📦 Standard Installation:
+   .\setup_strangeloop_old.ps1
+
+   🔍 Debug Mode (see what's happening):
+   .\setup_strangeloop_old.ps1 -ShowWSLWindows -VerboseWSL
+
+   ⚡ Quick Setup (skip prompts):
+   .\setup_strangeloop_old.ps1 -UserName "John Doe" -UserEmail "john@company.com"
+
+   🏢 Enterprise Mode (full visibility):
+   .\setup_strangeloop_old.ps1 -ShowWSLWindows -VerboseWSL -UserName "Admin" -UserEmail "admin@corp.com"
+
+   🚀 Skip Prerequisites (if already installed):
+   .\setup_strangeloop_old.ps1 -SkipPrerequisites
+
+🔧 WSL SESSION TYPES:
+   GitOperations             Git commands, configuration, repository management
+   PackageManagement         sudo operations, package installations (apt, dpkg)
+   StrangeLoopCLI           StrangeLoop-specific commands and project management
+   SystemConfiguration      System-level configuration changes
+
+📊 ENTERPRISE FEATURES:
+   ✅ Multi-Session WSL Management    ✅ Enterprise Error Handling
+   ✅ Performance Monitoring          ✅ Comprehensive Audit Logging  
+   ✅ Auto-Retry with Backoff         ✅ Interactive Fallback Mode
+   ✅ Command Type Optimization       ✅ Session Health Monitoring
+   ✅ Configurable Window Visibility  ✅ Verbose Diagnostics Mode
+
+🛠️  RUNTIME COMMANDS (available during/after script):
+   Show-WSLPerformanceReport         View session performance and health
+   Test-WSLSessionHealth             Check session connectivity
+   Optimize-WSLSessions              Clean up unhealthy sessions
+   Set-WSLWindowVisibility `$true     Toggle WSL window visibility
+   Start-InteractiveWSLSession       Manual WSL intervention mode
+
+📋 AUDIT & LOGGING:
+   All WSL commands are logged to: `$env:TEMP\StrangeLoop_WSL_Audit.jsonl
+   Includes timestamps, duration, success/failure, and full command output
+
+🔐 SECURITY:
+   • Secure password handling for sudo operations
+   • Complete audit trail for compliance
+   • Session isolation by operation type
+   • Enterprise-grade error handling
+
+⚠️  PREREQUISITES:
+   • Windows 10/11 with PowerShell 5.1+
+   • WSL 2 enabled
+   • Execution Policy: RemoteSigned or Unrestricted
+   • Internet connection for downloads
+
+🆘 TROUBLESHOOTING:
+   If you encounter issues:
+   1. Run with -ShowWSLWindows -VerboseWSL for maximum visibility
+   2. Check the audit log: `$env:TEMP\StrangeLoop_WSL_Audit.jsonl
+   3. Use Start-InteractiveWSLSession for manual intervention
+   4. Review session health with Test-WSLSessionHealth
+
+📧 SUPPORT:
+   Author: Sakr Omera/Bing Ads Teams Egypt
+   Version: 2.0 Enterprise WSL Edition
+   Created: August 2025
+
+"@ -ForegroundColor White
+
+    Write-Host "Press any key to exit..." -ForegroundColor Yellow
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit 0
+}
+
+# Check for help parameter first
+if ($Help) {
+    Show-ScriptHelp
+}
+
+# Quick help shortcuts - check for common help variations
+$helpVariations = @('/?', '/help', '--help', '-h', '?')
+if ($args -and ($args[0] -in $helpVariations)) {
+    Show-ScriptHelp
+}
+
+# Quick Parameter Summary Function
+function Show-QuickHelp {
+    Write-Host "`n📖 Quick Parameter Reference:" -ForegroundColor Cyan
+    Write-Host "   -Help                     Show detailed help" -ForegroundColor White
+    Write-Host "   -ShowWSLWindows           See WSL terminal windows" -ForegroundColor White
+    Write-Host "   -VerboseWSL               Enable detailed session info" -ForegroundColor White
+    Write-Host "   -SkipPrerequisites        Skip prerequisite checks" -ForegroundColor White
+    Write-Host "   -UserName 'Name'          Set Git user name" -ForegroundColor White
+    Write-Host "   -UserEmail 'email'        Set Git user email" -ForegroundColor White
+    Write-Host "`n   Example: .\setup_strangeloop_old.ps1 -ShowWSLWindows -VerboseWSL" -ForegroundColor Yellow
+    Write-Host "   For full help: .\setup_strangeloop_old.ps1 -Help`n" -ForegroundColor Yellow
 }
 
 # Error handling
@@ -1131,8 +1271,10 @@ function Get-UserInput {
 # Main Script
 Write-Host @"
 ╔═══════════════════════════════════════════════════════════════╗
-║                StrangeLoop CLI Setup - Simplified             ║
+║                StrangeLoop CLI Setup - Enterprise             ║
 ║                     Automated Installation                    ║
+║                                                               ║
+║                Use -Help for detailed usage                   ║
 ╚═══════════════════════════════════════════════════════════════╝
 "@ -ForegroundColor $Colors.Highlight
 
@@ -2695,6 +2837,7 @@ Write-Host "   • -VerboseWSL                  - Enable detailed session inform
 Write-Host "   • Both parameters together     - Maximum visibility and diagnostics" -ForegroundColor White
 
 Write-Host "`n💡 Pro tips:" -ForegroundColor Yellow
+Write-Host "   • Use -Help for comprehensive parameter documentation" -ForegroundColor Gray
 Write-Host "   • Use -ShowWSLWindows for troubleshooting WSL command issues" -ForegroundColor Gray
 Write-Host "   • WSL sessions are automatically managed and cleaned up" -ForegroundColor Gray
 Write-Host "   • All WSL commands are audited in: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
