@@ -2,22 +2,37 @@
 # Automated setup following readme.md requirements
 # 
 # Author: [Sakr Omera/Bing Ads Teams Egypt]
-# Version: 1.0
+# Version: 2.0 Enterprise WSL Edition
 # Created: August 2025
 # 
 # This script automates the setup of StrangeLoop development environment
-# including WSL, Python, Poetry, Git, and Docker configuration.
+# including WSL, Python, Poetry, Git, and Docker configuration with
+# enterprise-grade WSL session management.
 #
 # Prerequisites: Windows 10/11 with PowerShell 5.1+
 # Execution Policy: RemoteSigned or Unrestricted required
 #
-# Usage: .\setup-strangeloop-optimized.ps1 [-SkipPrerequisites] [-SkipDevelopmentTools] [-UserName "Name"] [-UserEmail "email@domain.com"]
+# Usage Examples:
+#   .\setup-strangeloop-optimized.ps1
+#   .\setup-strangeloop-optimized.ps1 -ShowWSLWindows
+#   .\setup-strangeloop-optimized.ps1 -VerboseWSL -ShowWSLWindows
+#   .\setup-strangeloop-optimized.ps1 -SkipPrerequisites -UserName "John Doe" -UserEmail "john@company.com"
+#
+# Parameters:
+#   -SkipPrerequisites     : Skip prerequisite installation checks
+#   -SkipDevelopmentTools  : Skip development tool setup
+#   -UserName              : Git user name (if not provided, will prompt)
+#   -UserEmail             : Git user email (if not provided, will prompt)
+#   -ShowWSLWindows        : Show WSL terminal windows (default: hidden)
+#   -VerboseWSL            : Enable verbose WSL session information
 
 param(
     [switch]$SkipPrerequisites,
     [switch]$SkipDevelopmentTools,
     [string]$UserName,
-    [string]$UserEmail
+    [string]$UserEmail,
+    [switch]$ShowWSLWindows,
+    [switch]$VerboseWSL
 )
 
 # Enterprise WSL Management Enums and Classes
@@ -174,6 +189,8 @@ $script:WSLConfig = @{
     CommandMarker = "STRANGELOOP_CMD_"
     CompletionMarker = "STRANGELOOP_COMPLETE_"
     ErrorMarker = "STRANGELOOP_ERROR_"
+    ShowWindows = $ShowWSLWindows
+    VerboseMode = $VerboseWSL
 }
 
 # Global session management
@@ -228,7 +245,19 @@ class WSLSessionManager {
             $processInfo.RedirectStandardInput = $true
             $processInfo.RedirectStandardOutput = $true
             $processInfo.RedirectStandardError = $true
-            $processInfo.CreateNoWindow = $true
+            
+            # Configure window visibility based on user preference
+            if ($script:WSLConfig.ShowWindows) {
+                $processInfo.CreateNoWindow = $false
+                $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+                Write-Host "  Creating visible WSL window for session $($session.Id) [$($session.Type)]" -ForegroundColor DarkCyan
+            } else {
+                $processInfo.CreateNoWindow = $true
+                $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden
+                if ($script:WSLConfig.VerboseMode) {
+                    Write-Host "  Creating hidden WSL session $($session.Id) [$($session.Type)]" -ForegroundColor DarkGray
+                }
+            }
             
             $session.Process = [System.Diagnostics.Process]::Start($processInfo)
             $session.InputStream = $session.Process.StandardInput
@@ -239,7 +268,16 @@ class WSLSessionManager {
             $this.ExecuteInitializationCommands($session)
             
             $session.IsHealthy = $true
-            Write-Verbose "WSL session $($session.Id) initialized successfully"
+            
+            if ($script:WSLConfig.VerboseMode -or $script:WSLConfig.ShowWindows) {
+                Write-Verbose "WSL session $($session.Id) initialized successfully"
+                Write-Host "  Session Details:" -ForegroundColor DarkGray
+                Write-Host "    • Type: $($session.Type)" -ForegroundColor DarkGray
+                Write-Host "    • Distribution: $($session.Distribution)" -ForegroundColor DarkGray
+                Write-Host "    • Working Directory: $($session.WorkingDirectory)" -ForegroundColor DarkGray
+                Write-Host "    • Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible' } else { 'Hidden' })" -ForegroundColor DarkGray
+                Write-Host "    • Process ID: $($session.Process.Id)" -ForegroundColor DarkGray
+            }
             
         } catch {
             $session.IsHealthy = $false
@@ -419,6 +457,7 @@ function Show-EnterpriseWSLBanner {
     Write-Host "║  ✅ Performance Monitoring          ✅ Comprehensive Audit Logging           ║" -ForegroundColor White
     Write-Host "║  ✅ Auto-Retry with Backoff         ✅ Interactive Fallback Mode             ║" -ForegroundColor White
     Write-Host "║  ✅ Command Type Optimization       ✅ Session Health Monitoring             ║" -ForegroundColor White
+    Write-Host "║  ✅ Configurable Window Visibility  ✅ Verbose Diagnostics Mode              ║" -ForegroundColor White
     Write-Host "╠══════════════════════════════════════════════════════════════════════════════╣" -ForegroundColor Cyan
     Write-Host "║  WSL Session Types:                                                          ║" -ForegroundColor Yellow
     Write-Host "║  🔧 GitOperations        🔧 PackageManagement                               ║" -ForegroundColor Yellow
@@ -427,16 +466,34 @@ function Show-EnterpriseWSLBanner {
     
     Write-Host "`n📊 Initializing Enterprise WSL Session Manager..." -ForegroundColor Green
     
+    # Show current configuration
+    Write-Host "`n⚙️  Current Configuration:" -ForegroundColor Yellow
+    Write-Host "   • WSL Window Mode: $(if ($script:WSLConfig.ShowWindows) { 'Visible (you will see WSL terminal windows)' } else { 'Hidden (background processing)' })" -ForegroundColor $(if ($script:WSLConfig.ShowWindows) { 'Green' } else { 'Gray' })
+    Write-Host "   • Verbose Mode: $(if ($script:WSLConfig.VerboseMode) { 'Enabled (detailed session info)' } else { 'Disabled (clean output)' })" -ForegroundColor $(if ($script:WSLConfig.VerboseMode) { 'Green' } else { 'Gray' })
+    Write-Host "   • Max Concurrent Sessions: $($script:WSLConfig.MaxConcurrentSessions)" -ForegroundColor Gray
+    Write-Host "   • Default Timeout: $($script:WSLConfig.DefaultTimeout.TotalMinutes) minutes" -ForegroundColor Gray
+    
     # Initialize audit logging
     if (Test-Path $script:WSLConfig.AuditLogPath) {
         $logSize = [math]::Round((Get-Item $script:WSLConfig.AuditLogPath).Length / 1KB, 2)
-        Write-Host "   Audit log: $($script:WSLConfig.AuditLogPath) ($logSize KB)" -ForegroundColor Gray
+        Write-Host "   • Audit Log: $($script:WSLConfig.AuditLogPath) ($logSize KB)" -ForegroundColor Gray
     } else {
-        Write-Host "   Creating new audit log: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
+        Write-Host "   • Creating Audit Log: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
     }
     
-    Write-Host "   Max concurrent sessions: $($script:WSLConfig.MaxConcurrentSessions)" -ForegroundColor Gray
-    Write-Host "   Default timeout: $($script:WSLConfig.DefaultTimeout.TotalMinutes) minutes" -ForegroundColor Gray
+    # Show usage tips
+    if ($script:WSLConfig.ShowWindows) {
+        Write-Host "`n💡 Window Mode Tips:" -ForegroundColor Cyan
+        Write-Host "   • You'll see WSL terminal windows for each session type" -ForegroundColor White
+        Write-Host "   • Each window shows real-time command execution" -ForegroundColor White
+        Write-Host "   • Don't close the WSL windows manually - they'll auto-cleanup" -ForegroundColor White
+    } else {
+        Write-Host "`n💡 Hidden Mode Tips:" -ForegroundColor Cyan
+        Write-Host "   • WSL sessions run in background for clean experience" -ForegroundColor White
+        Write-Host "   • All output appears in this main script window" -ForegroundColor White
+        Write-Host "   • Use -ShowWSLWindows parameter to see WSL terminals" -ForegroundColor White
+    }
+    
     Write-Host "`n🎯 Enterprise WSL management ready!" -ForegroundColor Green
 }
 
@@ -941,10 +998,47 @@ function Optimize-WSLSessions {
 
 # Enhanced Error Handling and Recovery
 
+<#
+.SYNOPSIS
+    Toggles WSL window visibility for existing and future sessions.
+#>
+function Set-WSLWindowVisibility {
+    param(
+        [bool]$ShowWindows,
+        [string]$SessionId = $null
+    )
+    
+    $oldSetting = $script:WSLConfig.ShowWindows
+    $script:WSLConfig.ShowWindows = $ShowWindows
+    
+    Write-Host "`n🔧 WSL Window Visibility Changed" -ForegroundColor Cyan
+    Write-Host "   Previous: $(if ($oldSetting) { 'Visible' } else { 'Hidden' })" -ForegroundColor Gray
+    Write-Host "   New Setting: $(if ($ShowWindows) { 'Visible' } else { 'Hidden' })" -ForegroundColor $(if ($ShowWindows) { 'Green' } else { 'Yellow' })
+    
+    if ($SessionId) {
+        Write-Host "   Note: Setting applies to new sessions. Existing session $SessionId will retain its current visibility." -ForegroundColor Yellow
+    } else {
+        Write-Host "   Note: Setting applies to all new WSL sessions." -ForegroundColor Yellow
+    }
+    
+    if ($ShowWindows) {
+        Write-Host "`n💡 Visible Mode Tips:" -ForegroundColor Cyan
+        Write-Host "   • You'll see WSL terminal windows for each new session" -ForegroundColor White
+        Write-Host "   • Great for debugging and transparency" -ForegroundColor White
+        Write-Host "   • Each window shows real-time command execution" -ForegroundColor White
+    } else {
+        Write-Host "`n💡 Hidden Mode Tips:" -ForegroundColor Cyan
+        Write-Host "   • WSL sessions run in background for clean experience" -ForegroundColor White
+        Write-Host "   • All output appears in this main script window" -ForegroundColor White
+        Write-Host "   • More streamlined user experience" -ForegroundColor White
+    }
+}
+
 function Start-InteractiveWSLSession {
     param(
         [string]$InitialCommand = "",
-        [WSLSessionType]$SessionType = [WSLSessionType]::GitOperations
+        [WSLSessionType]$SessionType = [WSLSessionType]::GitOperations,
+        [switch]$ForceVisible
     )
     
     Write-Host "`n🖥️  Starting Interactive WSL Session" -ForegroundColor Cyan
@@ -956,8 +1050,24 @@ function Start-InteractiveWSLSession {
         Write-Host "Initial command context: $InitialCommand" -ForegroundColor Magenta
     }
     
-    # Launch interactive WSL with appropriate distribution
-    $process = Start-Process -FilePath "wsl.exe" -ArgumentList "-d Ubuntu-24.04" -Wait -PassThru
+    # Determine window visibility for interactive session
+    $shouldShowWindow = $ForceVisible -or $script:WSLConfig.ShowWindows
+    
+    if ($shouldShowWindow) {
+        Write-Host "Launching visible WSL terminal..." -ForegroundColor Green
+        # Launch interactive WSL with appropriate distribution - visible window
+        $processInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $processInfo.FileName = "wsl.exe"
+        $processInfo.Arguments = "-d Ubuntu-24.04"
+        $processInfo.UseShellExecute = $true
+        $processInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+        
+        $process = [System.Diagnostics.Process]::Start($processInfo)
+        $process.WaitForExit()
+    } else {
+        Write-Host "Note: Interactive session will be visible regardless of current WSL window setting" -ForegroundColor Yellow
+        $process = Start-Process -FilePath "wsl.exe" -ArgumentList "-d Ubuntu-24.04" -Wait -PassThru
+    }
     
     Write-Host "`n↩️  Returned from interactive session" -ForegroundColor Green
     
@@ -2571,4 +2681,20 @@ Write-Host "🧹 Cleaning up WSL sessions..." -ForegroundColor Yellow
 $script:WSLManager.CleanupAllSessions()
 
 Write-Host "`n🎉 Enterprise StrangeLoop setup completed successfully!" -ForegroundColor Green
-Write-Host "💡 Pro tip: Use 'Show-WSLPerformanceReport' anytime to check session health" -ForegroundColor Cyan
+
+# Show usage tips for the new WSL features
+Write-Host "`n� WSL Session Management Commands:" -ForegroundColor Cyan
+Write-Host "   • Show-WSLPerformanceReport    - View session performance and health" -ForegroundColor White
+Write-Host "   • Test-WSLSessionHealth        - Check session connectivity" -ForegroundColor White
+Write-Host "   • Optimize-WSLSessions         - Clean up unhealthy sessions" -ForegroundColor White
+Write-Host "   • Set-WSLWindowVisibility `$true - Toggle WSL window visibility" -ForegroundColor White
+
+Write-Host "`n🔧 Script Parameters for Next Run:" -ForegroundColor Cyan
+Write-Host "   • -ShowWSLWindows              - See WSL terminal windows during execution" -ForegroundColor White
+Write-Host "   • -VerboseWSL                  - Enable detailed session information" -ForegroundColor White
+Write-Host "   • Both parameters together     - Maximum visibility and diagnostics" -ForegroundColor White
+
+Write-Host "`n💡 Pro tips:" -ForegroundColor Yellow
+Write-Host "   • Use -ShowWSLWindows for troubleshooting WSL command issues" -ForegroundColor Gray
+Write-Host "   • WSL sessions are automatically managed and cleaned up" -ForegroundColor Gray
+Write-Host "   • All WSL commands are audited in: $($script:WSLConfig.AuditLogPath)" -ForegroundColor Gray
