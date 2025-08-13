@@ -130,9 +130,9 @@ function Show-Changelog {
     
     $sortedVersions = $VERSION_CHANGELOG.Keys | Sort-Object { [Version]$_ } -Descending
     
-    foreach ($version in $sortedVersions) {
-        $versionInfo = $VERSION_CHANGELOG[$version]
-        Write-Host "`nVersion $version" -ForegroundColor Green -NoNewline
+    foreach ($versionKey in $sortedVersions) {
+        $versionInfo = $VERSION_CHANGELOG[$versionKey]
+        Write-Host "`nVersion $versionKey" -ForegroundColor Green -NoNewline
         Write-Host " ($($versionInfo.Date))" -ForegroundColor Gray
         Write-Host $("─" * 50) -ForegroundColor DarkGray
         
@@ -1682,7 +1682,7 @@ function Center-BannerText($text, $width) {
 Write-Host "╔═══════════════════════════════════════════════════════════════╗" -ForegroundColor $Colors.Highlight
 Write-Host "║$(Center-BannerText $title1 $bannerWidth)║" -ForegroundColor $Colors.Highlight
 Write-Host "║$(Center-BannerText $title2 $bannerWidth)║" -ForegroundColor $Colors.Highlight
-Write-Host "║$(Center-BannerText "" $bannerWidth)║" -ForegroundColor $Colors.Highlight
+Write-Host "║$(Center-BannerText ' ' $bannerWidth)║" -ForegroundColor $Colors.Highlight
 Write-Host "║$(Center-BannerText $versionText $bannerWidth)║" -ForegroundColor $Colors.Highlight
 Write-Host "║$(Center-BannerText $helpText $bannerWidth)║" -ForegroundColor $Colors.Highlight
 Write-Host "╚═══════════════════════════════════════════════════════════════╝" -ForegroundColor $Colors.Highlight
@@ -1719,26 +1719,26 @@ if (-not $SkipPrerequisites) {
         Write-Host "`n[$(Get-Date -Format 'HH:mm:ss')] Checking $($prereq.Key)..." -ForegroundColor Yellow
         if (Test-Command $prereq.Value) {
             # Get version information for better visibility
-            $version = ""
+            $prereqVersion = ""
             try {
                 switch ($prereq.Value) {
-                    "az" { $version = (az version --output json 2>$null | ConvertFrom-Json).'azure-cli' }
-                    "git" { $version = (git --version 2>$null) -replace "git version ", "" }
+                    "az" { $prereqVersion = (az version --output json 2>$null | ConvertFrom-Json).'azure-cli' }
+                    "git" { $prereqVersion = (git --version 2>$null) -replace "git version ", "" }
                     "git-lfs" { 
                         $lfsOutput = git lfs version 2>$null
                         if ($lfsOutput -match "git-lfs/([0-9]+\.[0-9]+\.[0-9]+)") {
-                            $version = $matches[1]
+                            $prereqVersion = $matches[1]
                         }
                     }
                     "docker" { 
                         $dockerOutput = docker --version 2>$null
                         if ($dockerOutput -match "Docker version ([0-9]+\.[0-9]+\.[0-9]+)") {
-                            $version = $matches[1]
+                            $prereqVersion = $matches[1]
                         }
                     }
                 }
-                if ($version) {
-                    Write-Success "$($prereq.Key) is installed (version: $version)"
+                if ($prereqVersion) {
+                    Write-Success "$($prereq.Key) is installed (version: $prereqVersion)"
                 } else {
                     Write-Success "$($prereq.Key) is installed"
                 }
