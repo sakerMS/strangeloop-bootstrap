@@ -1073,21 +1073,7 @@ if (Get-Module -Name $MyInvocation.MyCommand.Name -ErrorAction SilentlyContinue)
         'Test-Command',
         'Test-WSLAvailable',
         
-        # Configuration-based functions
-        'Get-PlatformForLoop',
-        'Initialize-PlatformConfig',
-        'Clear-PlatformConfigCache',
-        'Get-PlatformDefaultPath',
-        'Test-PathPlatform',
-        'Test-PlatformCompatibility',
-        
-        # Advanced operations
-        'Get-WSLDistributions',
-        'Get-RecommendedSetupStrategy',
-        'Invoke-CrossPlatformCommand',
-        
         # Utilities and reporting
-        'Write-ExecutionContextReport',
         'Get-PlatformDetails'
     )
 }

@@ -175,7 +175,7 @@ function Show-Help {
     Write-Host ""
 }
 
-function Show-LoopSelection {
+function Show-FinalSummary {
     <#
     .SYNOPSIS
         Displays available loops organized by platform for user selection
@@ -375,86 +375,6 @@ function Show-BasicLoopSelection {
     } while ($true)
 }
 
-function Show-PlatformChoice {
-    <#
-    .SYNOPSIS
-        Shows an interactive menu for platform selection when loop supports both platforms
-    
-    .RETURNS
-        Selected platform ('Windows' or 'WSL') or $null if user cancels
-    #>
-    Write-Host ""
-    Write-Host "🏗️ Platform Selection:" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "This loop supports both platforms. Please choose your target platform:" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  1. Windows" -ForegroundColor Yellow
-    Write-Host "     • Native Windows development" -ForegroundColor Gray
-    Write-Host "     • Best performance on Windows" -ForegroundColor Gray
-    Write-Host "     • Windows-native tools and paths" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "  2. WSL (Windows Subsystem for Linux)" -ForegroundColor Yellow
-    Write-Host "     • Linux-based development environment" -ForegroundColor Gray
-    Write-Host "     • Better compatibility with Linux containers" -ForegroundColor Gray
-    Write-Host "     • Unix-style paths and tools" -ForegroundColor Gray
-    Write-Host ""
-    
-    do {
-        Write-Host "Please select your target platform (1-2) or 'q' to quit: " -NoNewline -ForegroundColor Cyan
-        $userInput = Read-Host
-        
-        if ($userInput -eq 'q' -or $userInput -eq 'quit') {
-            return $null
-        }
-        
-        switch ($userInput) {
-            "1" { return "Windows" }
-            "2" { return "WSL" }
-            default {
-                Write-Host "Invalid selection. Please enter 1 for Windows, 2 for WSL, or 'q' to quit." -ForegroundColor Red
-                Write-Host ""
-            }
-        }
-    } while ($true)
-}
-
-function Show-SetupOnlyCompletion {
-    <#
-    .SYNOPSIS
-        Displays the setup-only completion message
-    
-    .PARAMETER PhaseResults
-        Hashtable containing results from setup phases
-    
-    .PARAMETER StartTime
-        DateTime when setup started
-    #>
-    param(
-        [hashtable]$PhaseResults,
-        [datetime]$StartTime
-    )
-    
-    $endTime = Get-Date
-    $totalDuration = $endTime - $StartTime
-    
-    Write-Host ""
-    Write-Host "✅ Environment Setup Complete!" -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Your development environment is ready for strangeloop development." -ForegroundColor White
-    Write-Host ""
-    Write-Host "📋 Environment setup completed:" -ForegroundColor Cyan
-    Write-Host "  ✓ Core prerequisites (Azure CLI, strangeloop CLI)" -ForegroundColor Green
-    Write-Host "  ✓ Environment prerequisites (Git, Python, Poetry, Docker, etc.)" -ForegroundColor Green
-    Write-Host "  ✓ Unified environment (Windows & WSL configured)" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "🔗 To create a project later, run:" -ForegroundColor Cyan
-    Write-Host "   .\setup-wrapper.ps1 -Mode bootstrap -LoopName <loop-name> -ProjectName <project-name>" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "⏱️  Total duration: $([math]::Round($totalDuration.TotalMinutes, 1)) minutes" -ForegroundColor Gray
-    Write-Host ""
-}
-
 function Show-FinalSummary {
     <#
     .SYNOPSIS
@@ -552,11 +472,6 @@ if ($MyInvocation.MyCommand.ModuleName) {
         'Show-Banner',
         'Show-Phases',
         'Show-Help',
-        'Show-LoopSelection',
-        'Show-InteractiveLoopSelection',
-        'Show-BasicLoopSelection', 
-        'Show-PlatformChoice',
-        'Show-SetupOnlyCompletion',
         'Show-FinalSummary'
     )
 }
