@@ -1,0 +1,239 @@
+# strangeloop Bootstrap Configuration
+# Version: 1.0.0
+# This file defines configuration for the strangeloop bootstrap system including version requirements
+
+# Bootstrap Script Version (from bootstrap es-metadata.yml)
+bootstrap_script:
+  version: "0.1.2"
+  description: "strangeloop Bootstrap Script System"
+
+# Core Development Tools (Early Prerequisites - Required on all platforms)
+git:
+  minimum_version: "2.40.0"
+  recommended_version: "latest"
+  notes: "Git for Windows with credential manager support"
+
+azure_cli:
+  minimum_version: "2.50.0"
+  recommended_version: "latest"
+  notes: "Azure CLI for Azure DevOps and resource management"
+
+# Environment-Specific Tools (Installed during environment setup based on loop type)
+python:
+  minimum_version: "3.9.0"
+  recommended_version: "3.12.x"
+  notes: "Python 3.9+ required for modern type hints and language features (installed during environment setup based on loop type detection)"
+
+poetry:
+  minimum_version: "1.5.0"
+  recommended_version: "latest"
+  notes: "Poetry for Python dependency management and packaging (installed during environment setup based on loop type detection)"
+
+# Additional Required Tools
+docker:
+  minimum_version: "20.10.0"
+  recommended_version: "latest"
+  notes: "Docker Desktop for containerization (required for strangeloop development)"
+
+git_lfs:
+  minimum_version: "2.0.0"
+  recommended_version: "latest"
+  notes: "Git Large File Storage for handling large assets (required for strangeloop projects)"
+
+# strangeloop Specific Tools
+strangeloop_cli:
+  minimum_version: "0.3.31"
+  recommended_version: "latest"
+  notes: "strangeloop CLI for project scaffolding and management"
+
+# System Requirements
+system:
+  windows_version: "10.0.19041"  # Windows 10 version 2004 or later
+  powershell_version: "5.1.0"   # PowerShell 5.1 minimum, 7.0+ recommended
+  disk_space_gb: 5              # Minimum free disk space in GB
+  memory_gb: 8                  # Recommended minimum RAM
+
+# Package Manager Preferences (in order of preference)
+package_managers:
+  preferred_order:
+    - "winget"      # Windows Package Manager (preferred - no admin required)
+    - "chocolatey"  # Chocolatey (requires admin)
+    - "direct"      # Direct download from vendor (fallback)
+
+# Version Check Configuration
+version_check:
+  timeout_seconds: 30
+  retry_attempts: 3
+  cache_duration_hours: 24
+
+# Installation Behavior
+installation:
+  auto_upgrade: false           # Prompt before upgrading existing tools
+  install_optional: "prompt"   # prompt, always, never
+  require_admin_approval: true  # Prompt before admin-required installations
+
+# WSL (Windows Subsystem for Linux) Configuration
+wsl:
+  default_distribution: "Ubuntu-24.04"
+  minimum_version: "2"
+  notes: "WSL 2 with Ubuntu LTS distribution for Linux development environment"
+
+# Platform Configuration - Defines loop-to-platform mappings
+platform_configuration:
+  # Windows-specific loops (require Windows environment)
+  windows_loops:
+    - "asp-dotnet-framework-api"
+    - "ads-snr-basic"
+  
+  # WSL/Linux-preferred loops (work best in WSL environment)
+  wsl_preferred_loops:
+    - "python-fast-api-linux"
+    - "python-mcp-server"
+    - "python-semantic-kernel-agent"
+    - "langgraph-agent"
+    - "csharp-mcp-server"
+    - "csharp-semantic-kernel-agent"
+    - "csharp-dotnet-aspire"
+    - "falcon-linux-byo-app"
+
+  # Dual-platform loops (can work on either Windows or WSL)
+  dual_platform_loops:
+  
+  # Default platform behavior
+  default_platform: "WSL"  # Default to WSL for unknown loops
+  
+  # Path detection patterns
+  path_patterns:
+    wsl_indicators:
+      - "^/"              # Unix-style absolute paths
+      - "^/home/"         # Linux home directories  
+      - "^/mnt/"          # WSL mount points
+    windows_indicators:
+      - "^[A-Za-z]:\\"    # Windows drive letters
+      - "^\\\\[^\\]+"     # UNC paths
+  
+  # Default project paths by platform
+  default_paths:
+    windows: "Q:\\src\\AdsSnR_Containers\\services"
+    wsl: "/home/$USER/AdsSnR_Containers/services"
+
+# Bootstrap Phases Configuration - New 3-Phase Structure
+phases:
+  "1":
+    name: "core-prerequisites"
+    title: "Core Prerequisites"
+    description: "Install and configure Azure CLI and strangeloop CLI (essential tools for all strangeloop workflows)"
+    aliases: ["core", "core-prerequisites", "prerequisites", "deps"]
+    required: true
+    estimated_duration_minutes: 5
+    steps:
+      - azure_cli_setup
+      - strangeloop_cli_setup
+      - powershell_policy_setup
+    
+  "2":
+    name: "additional-prerequisites"
+    title: "Additional Prerequisites"
+    description: "Platform-specific development environment setup including Git, Docker, Python, Poetry, VS Code, and conditional WSL installation (supports --no-wsl flag)"
+    aliases: ["prerequisites", "additional-prerequisites", "deps", "environment", "env", "setup"]
+    required: true
+    estimated_duration_minutes: 20
+    flags:
+      - name: "no-wsl"
+        description: "Skip WSL installation on Windows (Windows-only development)"
+        default: false
+    platforms:
+      windows:
+        steps:
+          - platform_detection
+          - git_installation_windows
+          - docker_desktop_installation
+          - python_installation_windows
+          - poetry_installation_windows
+          - git_lfs_installation
+          - wsl_environment_setup
+          - cross_platform_validation
+      linux:
+        steps:
+          - platform_detection
+          - system_package_updates
+          - git_installation_linux
+          - python_installation_linux
+          - poetry_installation_linux
+          - docker_engine_installation
+          - cross_platform_validation
+      macos:
+        steps:
+          - platform_detection
+          - homebrew_installation
+          - git_installation_macos
+          - python_installation_macos
+          - poetry_installation_macos
+          - docker_desktop_installation_macos
+          - cross_platform_validation
+      wsl:
+        steps:
+          - platform_detection
+          - linux_package_installation
+          - git_configuration
+          - python_installation_wsl
+          - poetry_installation_wsl
+          - docker_integration_validation
+    dependencies:
+      - phase: 1
+        description: "Requires Azure CLI and strangeloop CLI from Phase 1"
+    
+  "3":
+    name: "project-bootstrap"
+    title: "Project Bootstrap"
+    description: "Loop selection, project initialization, and development tool integration (strangeloop init, recurse, pipelines)"
+    aliases: ["bootstrap", "project", "init", "selection", "loop-selection", "tools", "integration"]
+    required: true
+    estimated_duration_minutes: 12
+    steps:
+      - loop_selection
+      - platform_compatibility_analysis
+      - loop_prerequisites_installation
+      - project_initialization
+      - recursive_bootstrap
+      - pipeline_creation
+
+# Bootstrap Modes Configuration - Updated for 3-Phase Structure
+modes:
+  "full":
+    title: "Complete Setup"
+    description: "Complete three-phase setup (Core Prerequisites + Environment Prerequisites + Project Bootstrap)"
+    phases: [1, 2, 3]
+    default: true
+    
+  "core-only":
+    title: "Core Prerequisites Only"
+    description: "Install only Azure CLI and strangeloop CLI (Phase 1 only)"
+    phases: [1]
+    aliases: ["core", "prerequisites-only"]
+    
+  "env-only":
+    title: "Environment Prerequisites"
+    description: "Environment setup without core prerequisites or project creation (Phase 2 only)"
+    phases: [2]
+    aliases: ["environment", "setup-only"]
+    
+  "bootstrap-only":
+    title: "Project Bootstrap Only"
+    description: "Project bootstrap assuming environment is ready (Phase 3 only - requires existing environment)"
+    phases: [3]
+    aliases: ["project-only", "bootstrap", "init-only"]
+
+# Execution Modifiers Configuration (how phases are executed)
+execution_modifiers:
+  "check-only":
+    title: "Check Mode"
+    description: "Validate environment and prerequisites without making changes"
+    aliases: ["check", "validate", "verify"]
+    parameter: "CheckOnly"
+    
+  "what-if":
+    title: "Preview Mode"  
+    description: "Preview what actions would be performed without making changes"
+    aliases: ["preview", "dry-run", "simulate"]
+    parameter: "WhatIf"

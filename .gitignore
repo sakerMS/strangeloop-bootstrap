@@ -1,8 +1,0 @@
-# Ignore local cache of downloaded scripts
-/temp-strangeloop-scripts/
-
-# Ignore generic temp directory if present
-/temp/
-
-# Ignore temporary installer artifact created during setup
-/strangeloop.msi
