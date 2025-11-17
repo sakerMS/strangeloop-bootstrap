@@ -1001,20 +1001,85 @@ function Install-strangeloopCLI {
             Push-Location $tempDir
             
             Write-Info "Downloading strangeloop CLI from Azure Artifacts..."
-            $azArgs = @(
-                "artifacts", "universal", "download",
-                "--organization", "https://msasg.visualstudio.com/",
-                "--project", "Bing_Ads",
-                "--scope", "project",
-                "--feed", "strangeloop",
-                "--name", "strangeloop-x86",
-                "--version", "*",
-                "--path", ".",
-                "--only-show-errors"
-            )
+            Write-Info "This may take several minutes..."
             
-            $azResult = & az @azArgs 2>&1
-            $azExitCode = $LASTEXITCODE
+            # Build the command as a string for better debugging
+            $downloadCmd = "az artifacts universal download " +
+                "--organization `"https://msasg.visualstudio.com/`" " +
+                "--project `"Bing_Ads`" " +
+                "--scope project " +
+                "--feed `"strangeloop`" " +
+                "--name `"strangeloop-x86`" " +
+                "--version `"*`" " +
+                "--path `".`""
+            
+            Write-Info "Executing: $downloadCmd"
+            Write-Host "⏳ Downloading... (this may appear to hang but is downloading in background)" -ForegroundColor Yellow
+            
+            try {
+                # Execute with explicit timeout using Start-Process
+                $psi = New-Object System.Diagnostics.ProcessStartInfo
+                $psi.FileName = "az"
+                $psi.Arguments = "artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`""
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardOutput = $true
+                $psi.RedirectStandardError = $true
+                $psi.CreateNoWindow = $true
+                
+                $process = New-Object System.Diagnostics.Process
+                $process.StartInfo = $psi
+                
+                # Event handlers for output
+                $outputBuilder = New-Object System.Text.StringBuilder
+                $errorBuilder = New-Object System.Text.StringBuilder
+                
+                $outputHandler = {
+                    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
+                        $Event.MessageData.AppendLine($EventArgs.Data)
+                        Write-Host "  $($EventArgs.Data)" -ForegroundColor Gray
+                    }
+                }
+                
+                $errorHandler = {
+                    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
+                        $Event.MessageData.AppendLine($EventArgs.Data)
+                        Write-Host "  [ERROR] $($EventArgs.Data)" -ForegroundColor Red
+                    }
+                }
+                
+                $outputEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action $outputHandler -MessageData $outputBuilder
+                $errorEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action $errorHandler -MessageData $errorBuilder
+                
+                $process.Start() | Out-Null
+                $process.BeginOutputReadLine()
+                $process.BeginErrorReadLine()
+                
+                # Wait with timeout (1 minute for large downloads)
+                $timeoutMs = 60000
+                if (-not $process.WaitForExit($timeoutMs)) {
+                    $process.Kill()
+                    throw "Download timed out after $($timeoutMs/1000) seconds"
+                }
+                
+                # Clean up events
+                Unregister-Event -SourceIdentifier $outputEvent.Name
+                Unregister-Event -SourceIdentifier $errorEvent.Name
+                
+                $azExitCode = $process.ExitCode
+                $output = $outputBuilder.ToString()
+                $errorOutput = $errorBuilder.ToString()
+                
+                Write-Host ""
+                if ($errorOutput) {
+                    Write-Host "Error output:" -ForegroundColor Yellow
+                    Write-Host $errorOutput -ForegroundColor Red
+                }
+                
+            } catch {
+                Write-Error "Exception during download: $($_.Exception.Message)"
+                Write-Error "Stack: $($_.ScriptStackTrace)"
+                return $false
+            }
             
             if ($azExitCode -ne 0) {
                 Write-Error "Download failed with exit code: $azExitCode"
