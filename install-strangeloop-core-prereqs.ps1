@@ -1017,14 +1017,29 @@ function Install-strangeloopCLI {
             Write-Host "⏳ Downloading... (this may appear to hang but is downloading in background)" -ForegroundColor Yellow
             
             try {
-                # Execute with explicit timeout using Start-Process
+                # Get the full path to az.cmd
+                $azPath = (Get-Command az -ErrorAction Stop).Source
+                Write-Info "Using Azure CLI at: $azPath"
+                
+                # For .cmd files, we need to use cmd.exe
+                $useCmd = $azPath -match '\.cmd$'
+                
                 $psi = New-Object System.Diagnostics.ProcessStartInfo
-                $psi.FileName = "az"
-                $psi.Arguments = "artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`""
+                
+                if ($useCmd) {
+                    $psi.FileName = "cmd.exe"
+                    # Properly quote the path and arguments for cmd.exe
+                    $psi.Arguments = "/c `"`"$azPath`" artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`"`""
+                } else {
+                    $psi.FileName = $azPath
+                    $psi.Arguments = "artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`""
+                }
+                
                 $psi.UseShellExecute = $false
                 $psi.RedirectStandardOutput = $true
                 $psi.RedirectStandardError = $true
                 $psi.CreateNoWindow = $true
+                $psi.WorkingDirectory = Get-Location
                 
                 $process = New-Object System.Diagnostics.Process
                 $process.StartInfo = $psi
