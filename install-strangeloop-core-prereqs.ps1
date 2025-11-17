@@ -1000,6 +1000,27 @@ function Install-strangeloopCLI {
         try {
             Push-Location $tempDir
             
+            Write-Info "Ensuring Azure DevOps extension is installed..."
+            try {
+                # Check if azure-devops extension is installed
+                $extensions = az extension list --output json 2>$null | ConvertFrom-Json
+                $azDevOpsExt = $extensions | Where-Object { $_.name -eq 'azure-devops' }
+                
+                if (-not $azDevOpsExt) {
+                    Write-Info "Installing azure-devops extension for Azure CLI..."
+                    az extension add --name azure-devops --yes 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Success "Azure DevOps extension installed"
+                    } else {
+                        Write-Warning "Failed to install azure-devops extension, download may prompt for installation"
+                    }
+                } else {
+                    Write-Info "Azure DevOps extension already installed (version $($azDevOpsExt.version))"
+                }
+            } catch {
+                Write-Warning "Could not verify azure-devops extension: $($_.Exception.Message)"
+            }
+            
             Write-Info "Downloading strangeloop CLI from Azure Artifacts..."
             Write-Info "This may take several minutes..."
             
