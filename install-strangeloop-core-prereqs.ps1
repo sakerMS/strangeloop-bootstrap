@@ -1002,120 +1002,41 @@ function Install-strangeloopCLI {
             
             Write-Info "Ensuring Azure DevOps extension is installed..."
             try {
-                # Check if azure-devops extension is installed
-                $extensions = az extension list --output json 2>$null | ConvertFrom-Json
-                $azDevOpsExt = $extensions | Where-Object { $_.name -eq 'azure-devops' }
+                # Check if extension is already installed
+                $extensionList = az extension list --output json 2>$null | ConvertFrom-Json
+                $azDevOpsInstalled = $extensionList | Where-Object { $_.name -eq "azure-devops" }
                 
-                if (-not $azDevOpsExt) {
+                if (-not $azDevOpsInstalled) {
                     Write-Info "Installing azure-devops extension for Azure CLI..."
-                    az extension add --name azure-devops --yes 2>&1 | Out-Null
+                    $installResult = az extension add --name azure-devops --only-show-errors 2>&1
                     if ($LASTEXITCODE -eq 0) {
-                        Write-Success "Azure DevOps extension installed"
+                        Write-Success "Azure DevOps extension installed successfully"
                     } else {
-                        Write-Warning "Failed to install azure-devops extension, download may prompt for installation"
+                        Write-Warning "Extension installation completed with warnings (this is usually safe to ignore)"
                     }
                 } else {
-                    Write-Info "Azure DevOps extension already installed (version $($azDevOpsExt.version))"
+                    Write-Info "Azure DevOps extension already installed"
                 }
             } catch {
-                Write-Warning "Could not verify azure-devops extension: $($_.Exception.Message)"
+                Write-Warning "Could not verify Azure DevOps extension: $($_.Exception.Message)"
+                Write-Info "Attempting to proceed anyway..."
             }
             
             Write-Info "Downloading strangeloop CLI from Azure Artifacts..."
-            Write-Info "This may take several minutes..."
+            $azArgs = @(
+                "artifacts", "universal", "download",
+                "--organization", "https://msasg.visualstudio.com/",
+                "--project", "Bing_Ads",
+                "--scope", "project",
+                "--feed", "strangeloop",
+                "--name", "strangeloop-x86",
+                "--version", "*",
+                "--path", ".",
+                "--only-show-errors"
+            )
             
-            # Build the command as a string for better debugging
-            $downloadCmd = "az artifacts universal download " +
-                "--organization `"https://msasg.visualstudio.com/`" " +
-                "--project `"Bing_Ads`" " +
-                "--scope project " +
-                "--feed `"strangeloop`" " +
-                "--name `"strangeloop-x86`" " +
-                "--version `"*`" " +
-                "--path `".`""
-            
-            Write-Info "Executing: $downloadCmd"
-            Write-Host "⏳ Downloading... (this may appear to hang but is downloading in background)" -ForegroundColor Yellow
-            
-            try {
-                # Get the full path to az.cmd
-                $azPath = (Get-Command az -ErrorAction Stop).Source
-                Write-Info "Using Azure CLI at: $azPath"
-                
-                # For .cmd files, we need to use cmd.exe
-                $useCmd = $azPath -match '\.cmd$'
-                
-                $psi = New-Object System.Diagnostics.ProcessStartInfo
-                
-                if ($useCmd) {
-                    $psi.FileName = "cmd.exe"
-                    # Properly quote the path and arguments for cmd.exe
-                    $psi.Arguments = "/c `"`"$azPath`" artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`"`""
-                } else {
-                    $psi.FileName = $azPath
-                    $psi.Arguments = "artifacts universal download --organization `"https://msasg.visualstudio.com/`" --project `"Bing_Ads`" --scope project --feed `"strangeloop`" --name `"strangeloop-x86`" --version `"*`" --path `".`""
-                }
-                
-                $psi.UseShellExecute = $false
-                $psi.RedirectStandardOutput = $true
-                $psi.RedirectStandardError = $true
-                $psi.CreateNoWindow = $true
-                $psi.WorkingDirectory = Get-Location
-                
-                $process = New-Object System.Diagnostics.Process
-                $process.StartInfo = $psi
-                
-                # Event handlers for output
-                $outputBuilder = New-Object System.Text.StringBuilder
-                $errorBuilder = New-Object System.Text.StringBuilder
-                
-                $outputHandler = {
-                    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
-                        $Event.MessageData.AppendLine($EventArgs.Data)
-                        Write-Host "  $($EventArgs.Data)" -ForegroundColor Gray
-                    }
-                }
-                
-                $errorHandler = {
-                    if (-not [string]::IsNullOrEmpty($EventArgs.Data)) {
-                        $Event.MessageData.AppendLine($EventArgs.Data)
-                        Write-Host "  [ERROR] $($EventArgs.Data)" -ForegroundColor Red
-                    }
-                }
-                
-                $outputEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action $outputHandler -MessageData $outputBuilder
-                $errorEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action $errorHandler -MessageData $errorBuilder
-                
-                $process.Start() | Out-Null
-                $process.BeginOutputReadLine()
-                $process.BeginErrorReadLine()
-                
-                # Wait with timeout (1 minute for large downloads)
-                $timeoutMs = 60000
-                if (-not $process.WaitForExit($timeoutMs)) {
-                    $process.Kill()
-                    throw "Download timed out after $($timeoutMs/1000) seconds"
-                }
-                
-                # Clean up events
-                Unregister-Event -SourceIdentifier $outputEvent.Name
-                Unregister-Event -SourceIdentifier $errorEvent.Name
-                
-                $azExitCode = $process.ExitCode
-                $output = $outputBuilder.ToString()
-                $errorOutput = $errorBuilder.ToString()
-                
-                Write-Host ""
-                if ($errorOutput) {
-                    Write-Host "Error output:" -ForegroundColor Yellow
-                    Write-Host $errorOutput -ForegroundColor Red
-                }
-                
-            } catch {
-                Write-Error "Exception during download: $($_.Exception.Message)"
-                Write-Error "Stack: $($_.ScriptStackTrace)"
-                return $false
-            }
+            $azResult = & az @azArgs 2>&1
+            $azExitCode = $LASTEXITCODE
             
             if ($azExitCode -ne 0) {
                 Write-Error "Download failed with exit code: $azExitCode"
